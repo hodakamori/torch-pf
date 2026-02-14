@@ -1,24 +1,73 @@
-"""Flory-Huggins free energy for binary polymer blends.
+"""Free energy models for binary polymer blends.
 
-The Flory-Huggins free energy density for a binary polymer blend is:
+Two models are provided:
 
-    f(φ) = (φ / N_A) ln(φ) + ((1 - φ) / N_B) ln(1 - φ) + χ φ (1 - φ)
+1. ``FloryHuggins`` -- Regularized Flory-Huggins free energy with smooth
+   logarithmic extension outside [ε, 1−ε] to avoid singularities.
 
-where:
-    φ   : volume fraction of polymer A
-    N_A : degree of polymerization of polymer A
-    N_B : degree of polymerization of polymer B
-    χ   : Flory-Huggins interaction parameter
+2. ``DoubleWell`` -- Polynomial double-well free energy of the form
+   f(φ) = W φ²(1−φ)², which is numerically robust and widely used in
+   phase-field simulations.
 """
 
 from __future__ import annotations
+
+from abc import ABC, abstractmethod
 
 import torch
 from torch import Tensor
 
 
-class FloryHuggins:
-    """Flory-Huggins free energy for binary polymer blends.
+class FreeEnergy(ABC):
+    """Abstract base class for free energy models."""
+
+    @abstractmethod
+    def free_energy_density(self, phi: Tensor) -> Tensor: ...
+
+    @abstractmethod
+    def chemical_potential(self, phi: Tensor) -> Tensor: ...
+
+
+# ---------------------------------------------------------------------------
+# Regularized Flory-Huggins
+# ---------------------------------------------------------------------------
+
+def _safe_log(x: Tensor, eps: float = 0.01) -> Tensor:
+    """Logarithm with smooth quadratic extension for x < eps.
+
+    For x >= eps:  returns log(x)
+    For x <  eps:  returns log(eps) + (x - eps)/eps - 0.5*((x - eps)/eps)^2
+    """
+    safe = x.clamp(min=eps)
+    log_val = safe.log()
+    # Quadratic extension below eps
+    mask = x < eps
+    if mask.any():
+        t = (x[mask] - eps) / eps
+        log_val = log_val.clone()
+        log_val[mask] = eps.log() if isinstance(eps, Tensor) else torch.tensor(eps).log().item()
+        log_val[mask] = log_val[mask] + t - 0.5 * t * t
+    return log_val
+
+
+def _safe_log_deriv(x: Tensor, eps: float = 0.01) -> Tensor:
+    """Derivative of _safe_log: 1/x for x >= eps, linear for x < eps."""
+    safe = x.clamp(min=eps)
+    val = 1.0 / safe
+    mask = x < eps
+    if mask.any():
+        val = val.clone()
+        val[mask] = (1.0 / eps) * (1.0 - (x[mask] - eps) / eps)
+    return val
+
+
+class FloryHuggins(FreeEnergy):
+    """Regularized Flory-Huggins free energy for binary polymer blends.
+
+    f(φ) = (φ/N_A) ln(φ) + ((1−φ)/N_B) ln(1−φ) + χ φ(1−φ)
+
+    The logarithms are smoothly extended outside [ε, 1−ε] to avoid
+    numerical divergence, making the model safe for spectral solvers.
 
     Parameters
     ----------
@@ -28,16 +77,25 @@ class FloryHuggins:
         Degree of polymerization of polymer A.
     n_b : float
         Degree of polymerization of polymer B.
+    eps : float
+        Regularization width for the logarithm (default 0.01).
     """
 
-    def __init__(self, chi: float, n_a: float = 100.0, n_b: float = 100.0) -> None:
+    def __init__(
+        self,
+        chi: float,
+        n_a: float = 100.0,
+        n_b: float = 100.0,
+        eps: float = 0.01,
+    ) -> None:
         self.chi = chi
         self.n_a = n_a
         self.n_b = n_b
+        self.eps = eps
 
     @property
     def chi_critical(self) -> float:
-        """Critical χ value for the blend (spinodal instability onset)."""
+        """Critical χ for the blend."""
         return 0.5 * (1.0 / self.n_a**0.5 + 1.0 / self.n_b**0.5) ** 2
 
     @property
@@ -48,61 +106,58 @@ class FloryHuggins:
         return nb_sqrt / (na_sqrt + nb_sqrt)
 
     def free_energy_density(self, phi: Tensor) -> Tensor:
-        """Compute Flory-Huggins free energy density f(φ).
-
-        Parameters
-        ----------
-        phi : Tensor
-            Volume fraction field of polymer A.
-
-        Returns
-        -------
-        Tensor
-            Free energy density at each grid point.
-        """
-        phi_c = phi.clamp(1e-8, 1.0 - 1e-8)
+        eps = self.eps
         return (
-            (phi_c / self.n_a) * phi_c.log()
-            + ((1.0 - phi_c) / self.n_b) * (1.0 - phi_c).log()
-            + self.chi * phi_c * (1.0 - phi_c)
+            (phi / self.n_a) * _safe_log(phi, eps)
+            + ((1.0 - phi) / self.n_b) * _safe_log(1.0 - phi, eps)
+            + self.chi * phi * (1.0 - phi)
         )
 
     def chemical_potential(self, phi: Tensor) -> Tensor:
-        """Compute the bulk chemical potential df/dφ.
-
-        Parameters
-        ----------
-        phi : Tensor
-            Volume fraction field of polymer A.
-
-        Returns
-        -------
-        Tensor
-            Bulk chemical potential at each grid point.
-        """
-        phi_c = phi.clamp(1e-8, 1.0 - 1e-8)
+        eps = self.eps
         return (
-            (1.0 / self.n_a) * (phi_c.log() + 1.0)
-            - (1.0 / self.n_b) * ((1.0 - phi_c).log() + 1.0)
-            + self.chi * (1.0 - 2.0 * phi_c)
+            (1.0 / self.n_a) * (_safe_log(phi, eps) + 1.0)
+            - (1.0 / self.n_b) * (_safe_log(1.0 - phi, eps) + 1.0)
+            + self.chi * (1.0 - 2.0 * phi)
         )
 
     def second_derivative(self, phi: Tensor) -> Tensor:
-        """Compute d²f/dφ² (used for spinodal analysis).
-
-        Parameters
-        ----------
-        phi : Tensor
-            Volume fraction field of polymer A.
-
-        Returns
-        -------
-        Tensor
-            Second derivative of free energy density.
-        """
-        phi_c = phi.clamp(1e-8, 1.0 - 1e-8)
+        """d²f/dφ² (for spinodal analysis and stabilization estimate)."""
+        eps = self.eps
         return (
-            1.0 / (self.n_a * phi_c)
-            + 1.0 / (self.n_b * (1.0 - phi_c))
+            (1.0 / self.n_a) * _safe_log_deriv(phi, eps)
+            + (1.0 / self.n_b) * _safe_log_deriv(1.0 - phi, eps)
             - 2.0 * self.chi
         )
+
+
+# ---------------------------------------------------------------------------
+# Polynomial double-well
+# ---------------------------------------------------------------------------
+
+
+class DoubleWell(FreeEnergy):
+    """Double-well free energy f(φ) = W φ²(1−φ)².
+
+    A simple and numerically robust model commonly used in Cahn-Hilliard
+    simulations.  The wells are at φ = 0 and φ = 1 with barrier height W/16.
+
+    Parameters
+    ----------
+    W : float
+        Barrier height parameter (controls the driving force for separation).
+    """
+
+    def __init__(self, W: float = 1.0) -> None:
+        self.W = W
+
+    def free_energy_density(self, phi: Tensor) -> Tensor:
+        return self.W * phi**2 * (1.0 - phi) ** 2
+
+    def chemical_potential(self, phi: Tensor) -> Tensor:
+        # f'(φ) = 2W φ(1−φ)(1−2φ)
+        return 2.0 * self.W * phi * (1.0 - phi) * (1.0 - 2.0 * phi)
+
+    def second_derivative(self, phi: Tensor) -> Tensor:
+        # f''(φ) = 2W(1 − 6φ + 6φ²)
+        return 2.0 * self.W * (1.0 - 6.0 * phi + 6.0 * phi**2)

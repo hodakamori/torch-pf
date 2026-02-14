@@ -1,9 +1,10 @@
 """Spinodal decomposition of a symmetric polymer blend.
 
 This example simulates the spinodal decomposition of a symmetric
-polymer blend (N_A = N_B = 100) with χ above the critical value.
+polymer blend (N_A = N_B = 100) with χ well above the critical value.
 Starting from a nearly homogeneous state with small random perturbations,
-the system phase-separates into A-rich and B-rich domains.
+the system phase-separates into A-rich and B-rich domains, followed by
+coarsening driven by interfacial tension reduction.
 """
 
 import matplotlib.pyplot as plt
@@ -23,9 +24,9 @@ def main() -> None:
 
     # Symmetric blend: N_A = N_B = 100
     # Critical χ = 2/N = 0.02 for symmetric blend
-    # Use χ = 0.03 (above critical) to trigger spinodal decomposition
-    free_energy = FloryHuggins(chi=0.03, n_a=100, n_b=100)
-    print(f"χ = {free_energy.chi}, χ_c = {free_energy.chi_critical:.4f}")
+    # Use χ = 0.1 (well above critical) for clear phase separation
+    free_energy = FloryHuggins(chi=0.1, n_a=100, n_b=100)
+    print(f"chi = {free_energy.chi}, chi_c = {free_energy.chi_critical:.4f}")
 
     params = SimulationParams(
         nx=128,
@@ -38,13 +39,13 @@ def main() -> None:
 
     solver = CahnHilliardSolver(params, free_energy, device=device)
 
-    # Start from nearly homogeneous state (φ = 0.5 + noise)
+    # Start from nearly homogeneous state (phi = 0.5 + noise)
     phi0 = random_uniform(
-        params.nx, params.ny, phi_mean=0.5, noise_amplitude=0.01, seed=42, device=device
+        params.nx, params.ny, phi_mean=0.5, noise_amplitude=0.05, seed=42, device=device
     )
 
-    n_steps = 10000
-    save_interval = 2000
+    n_steps = 20000
+    save_interval = 4000
     print(f"Running {n_steps} steps...")
 
     snapshots = solver.run(phi0, n_steps=n_steps, save_interval=save_interval)
@@ -54,7 +55,7 @@ def main() -> None:
     for step, phi in snapshots:
         phi_dev = phi.to(device)
         fe = solver.compute_total_free_energy(phi_dev)
-        print(f"  step {step:6d}: F = {fe:.4f}, φ_min = {phi.min():.4f}, φ_max = {phi.max():.4f}")
+        print(f"  step {step:6d}: F = {fe:.4f}, phi_min = {phi.min():.4f}, phi_max = {phi.max():.4f}")
 
     # Plot snapshots
     n_snapshots = len(snapshots)
@@ -74,7 +75,7 @@ def main() -> None:
         ax.set_xlabel("x")
         ax.set_ylabel("y")
 
-    fig.colorbar(im, ax=axes, label="φ (volume fraction of A)", shrink=0.8)
+    fig.colorbar(im, ax=axes, label=r"$\phi$ (volume fraction of A)", shrink=0.8)
     fig.suptitle("Spinodal Decomposition of Polymer Blend", fontsize=14)
     plt.tight_layout()
     plt.savefig("spinodal_decomposition.png", dpi=150, bbox_inches="tight")

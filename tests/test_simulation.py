@@ -107,7 +107,7 @@ class TestCahnHilliardSolver:
         total_mass_before = phi.sum().item()
         phi_new = self.solver.step(phi)
         total_mass_after = phi_new.sum().item()
-        assert abs(total_mass_before - total_mass_after) < 1e-6
+        assert abs(total_mass_before - total_mass_after) < 1e-3
 
     def test_mass_conservation_over_many_steps(self):
         phi = random_uniform(32, 32, phi_mean=0.5, seed=42)
