@@ -8,7 +8,7 @@ from torch_pf import CahnHilliardSolver, FloryHuggins, SimulationParams, random_
 
 def main() -> None:
     free_energy = FloryHuggins(chi=0.1, n_a=100, n_b=100)
-    params = SimulationParams(nx=128, ny=128, dx=1.0, dt=0.5, mobility=1.0, kappa=0.5)
+    params = SimulationParams(shape=(128, 128), dx=1.0, dt=0.5, mobility=1.0, kappa=0.5)
     solver = CahnHilliardSolver(params, free_energy)
 
     phi0 = random_uniform(128, 128, phi_mean=0.5, noise_amplitude=0.05, seed=42)
@@ -45,10 +45,10 @@ def main() -> None:
     ani = animation.FuncAnimation(
         fig, update, frames=len(snapshots), interval=80, blit=True
     )
-    out_path = "/home/user/torch-pf/spinodal_decomposition.gif"
+    out_path = "examples/results/spinodal_decomposition.gif"
     ani.save(out_path, writer="pillow", fps=12)
     plt.close()
-    print(f"Saved to {out_path}")
+    print(f"Saved {out_path}")
 
 
 if __name__ == "__main__":

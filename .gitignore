@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+
+# Generated outputs (keep curated examples/results/)
 *.png
 *.gif
 !examples/results/*.png

@@ -1,14 +1,13 @@
 """Generate a panel of snapshots showing spinodal decomposition evolution."""
 
 import matplotlib.pyplot as plt
-import torch
 
 from torch_pf import CahnHilliardSolver, FloryHuggins, SimulationParams, random_uniform
 
 
 def main() -> None:
     free_energy = FloryHuggins(chi=0.1, n_a=100, n_b=100)
-    params = SimulationParams(nx=128, ny=128, dx=1.0, dt=0.5, mobility=1.0, kappa=0.5)
+    params = SimulationParams(shape=(128, 128), dx=1.0, dt=0.5, mobility=1.0, kappa=0.5)
     solver = CahnHilliardSolver(params, free_energy)
     print(f"Stabilization C = {solver._C:.4f}")
 
@@ -48,10 +47,10 @@ def main() -> None:
         f"($N_A=N_B={int(free_energy.n_a)},\\ \\chi={free_energy.chi},\\ \\chi_c={free_energy.chi_critical:.2f}$)",
         fontsize=14,
     )
-    out_path = "/home/user/torch-pf/spinodal_panel.png"
+    out_path = "examples/results/spinodal_panel.png"
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"\nSaved to {out_path}")
+    print(f"\nSaved {out_path}")
 
 
 if __name__ == "__main__":
