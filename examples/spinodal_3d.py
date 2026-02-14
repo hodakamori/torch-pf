@@ -1,11 +1,14 @@
 """Spinodal decomposition of a symmetric polymer blend (3D).
 
-This example simulates 3D spinodal decomposition and saves cross-section
-snapshots at z = Nz/2.
+This example simulates 3D spinodal decomposition and renders isosurface
+snapshots using marching cubes (requires ``scikit-image``).
 """
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from skimage.measure import marching_cubes
 
 from torch_pf import (
     CahnHilliardSolver,
@@ -15,6 +18,26 @@ from torch_pf import (
 )
 
 
+def plot_isosurface(ax, phi_np, level=0.5, color="#b03030", alpha=0.6):
+    """Render a phi=level isosurface on a 3D axes."""
+    verts, faces, _, _ = marching_cubes(phi_np, level=level)
+    mesh = Poly3DCollection(
+        verts[faces],
+        alpha=alpha,
+        edgecolor="k",
+        linewidth=0.1,
+    )
+    mesh.set_facecolor(color)
+    ax.add_collection3d(mesh)
+    n = phi_np.shape[0]
+    ax.set_xlim(0, n)
+    ax.set_ylim(0, n)
+    ax.set_zlim(0, n)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+
+
 def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
@@ -22,7 +45,7 @@ def main() -> None:
     free_energy = FloryHuggins(chi=0.1, n_a=100, n_b=100)
     print(f"chi = {free_energy.chi}, chi_c = {free_energy.chi_critical:.4f}")
 
-    N = 64  # 64^3 grid
+    N = 64
     params = SimulationParams(
         shape=(N, N, N),
         dx=1.0,
@@ -50,22 +73,23 @@ def main() -> None:
         fe = solver.compute_total_free_energy(phi_dev)
         print(f"  step {step:6d}: F = {fe:.2f}")
 
-    # Plot cross-sections at z = N/2
-    z_mid = N // 2
-    n_snapshots = len(snapshots)
-    fig, axes = plt.subplots(1, n_snapshots, figsize=(4 * n_snapshots, 4))
-    if n_snapshots == 1:
-        axes = [axes]
+    # --- 3D isosurface rendering ---
+    # Skip t=0 (uniform field has no meaningful isosurface)
+    plot_snapshots = [(s, p) for s, p in snapshots if s > 0]
+    n_plots = len(plot_snapshots)
+    fig = plt.figure(figsize=(5 * n_plots, 5))
 
-    for ax, (step, phi) in zip(axes, snapshots):
-        cross = phi[:, :, z_mid].numpy().T
-        im = ax.imshow(cross, origin="lower", cmap="RdBu_r", vmin=0, vmax=1)
-        ax.set_title(f"t = {step * params.dt:.0f}")
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
+    for i, (step, phi) in enumerate(plot_snapshots):
+        ax = fig.add_subplot(1, n_plots, i + 1, projection="3d")
+        phi_np = phi.numpy()
+        plot_isosurface(ax, phi_np, level=0.5, color="#b03030", alpha=0.6)
+        ax.set_title(f"t = {step * params.dt:.0f}", fontsize=12)
+        ax.view_init(elev=25, azim=-60)
 
-    fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.8)
-    fig.suptitle(f"3D Spinodal Decomposition (z = {z_mid} cross-section)", fontsize=14)
+    fig.suptitle(
+        r"3D Spinodal Decomposition — $\phi = 0.5$ isosurface",
+        fontsize=14,
+    )
     plt.savefig("examples/results/spinodal_3d.png", dpi=150, bbox_inches="tight")
     print("\nSaved examples/results/spinodal_3d.png")
 
