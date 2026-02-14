@@ -61,9 +61,8 @@ def main() -> None:
 
     fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.8)
     fig.suptitle("Spinodal Decomposition (2D)", fontsize=14)
-    plt.tight_layout()
-    plt.savefig("spinodal_2d.png", dpi=150, bbox_inches="tight")
-    print("\nSaved spinodal_2d.png")
+    plt.savefig("examples/results/spinodal_2d.png", dpi=150, bbox_inches="tight")
+    print("\nSaved examples/results/spinodal_2d.png")
 
 
 if __name__ == "__main__":
