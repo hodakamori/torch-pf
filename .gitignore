@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 *.png
 *.gif
+!examples/results/*.png
