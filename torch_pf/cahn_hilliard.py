@@ -1,6 +1,6 @@
 """Cahn-Hilliard solver using the spectral (FFT) method.
 
-Solves the Cahn-Hilliard equation:
+Solves the Cahn-Hilliard equation in 2D or 3D:
 
     ∂φ/∂t = M ∇²μ
     μ     = f'(φ) - κ ∇²φ
@@ -17,7 +17,7 @@ The stabilization constant C is automatically chosen to ensure stability.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from torch import Tensor
@@ -31,12 +31,10 @@ class SimulationParams:
 
     Parameters
     ----------
-    nx : int
-        Number of grid points in x.
-    ny : int
-        Number of grid points in y.
+    shape : tuple of int
+        Grid dimensions, e.g. (128, 128) for 2D or (64, 64, 64) for 3D.
     dx : float
-        Grid spacing.
+        Grid spacing (uniform in all directions).
     dt : float
         Time step size.
     mobility : float
@@ -48,17 +46,21 @@ class SimulationParams:
         If None, it is estimated automatically from the free energy.
     """
 
-    nx: int = 128
-    ny: int = 128
+    shape: tuple[int, ...] = (128, 128)
     dx: float = 1.0
     dt: float = 0.5
     mobility: float = 1.0
     kappa: float = 0.5
     stabilization: float | None = None
 
+    @property
+    def ndim(self) -> int:
+        """Spatial dimensionality (2 or 3)."""
+        return len(self.shape)
+
 
 class CahnHilliardSolver:
-    """Spectral solver for the Cahn-Hilliard equation.
+    """Spectral solver for the Cahn-Hilliard equation (2D / 3D).
 
     Works with any ``FreeEnergy`` model (FloryHuggins, DoubleWell, etc.).
 
@@ -88,17 +90,13 @@ class CahnHilliardSolver:
         else:
             self._C = self._estimate_stabilization()
 
-        # Precompute wavenumbers and denominator
-        self._k2, self._k4 = self._build_wavenumbers()
+        # Precompute wavenumber grids
+        self._k_grids = self._build_k_grids()  # list of 1-D k arrays broadcast to N-D
+        self._k2 = sum(kg**2 for kg in self._k_grids)  # |k|²
         self._denom = (
             1.0
             + params.dt * params.mobility * self._k2 * (self._C + params.kappa * self._k2)
         )
-
-        # Precompute spectral gradient operators for free energy computation
-        kx = torch.fft.fftfreq(params.nx, d=params.dx / (2.0 * torch.pi)).to(self.device)
-        ky = torch.fft.fftfreq(params.ny, d=params.dx / (2.0 * torch.pi)).to(self.device)
-        self._kx_grid, self._ky_grid = torch.meshgrid(kx, ky, indexing="ij")
 
     def _estimate_stabilization(self) -> float:
         """Estimate stabilization constant from max |f''| in [0.01, 0.99]."""
@@ -106,15 +104,15 @@ class CahnHilliardSolver:
         d2f = self.free_energy.second_derivative(phi_test)
         return max(float(d2f.abs().max()) * 1.1, 1.0)
 
-    def _build_wavenumbers(self) -> tuple[Tensor, Tensor]:
-        """Build squared wavenumber arrays k² and k⁴."""
+    def _build_k_grids(self) -> list[Tensor]:
+        """Build wavenumber component grids for each spatial dimension."""
         p = self.params
-        kx = torch.fft.fftfreq(p.nx, d=p.dx / (2.0 * torch.pi)).to(self.device)
-        ky = torch.fft.fftfreq(p.ny, d=p.dx / (2.0 * torch.pi)).to(self.device)
-        kx_grid, ky_grid = torch.meshgrid(kx, ky, indexing="ij")
-        k2 = kx_grid**2 + ky_grid**2
-        k4 = k2**2
-        return k2, k4
+        k_1d = [
+            torch.fft.fftfreq(n, d=p.dx / (2.0 * torch.pi)).to(self.device)
+            for n in p.shape
+        ]
+        grids = torch.meshgrid(*k_1d, indexing="ij")
+        return list(grids)
 
     def step(self, phi: Tensor) -> Tensor:
         """Advance the field by one time step.
@@ -122,7 +120,7 @@ class CahnHilliardSolver:
         Parameters
         ----------
         phi : Tensor
-            Current volume fraction field, shape (nx, ny).
+            Current volume fraction field, shape matching ``params.shape``.
 
         Returns
         -------
@@ -130,13 +128,12 @@ class CahnHilliardSolver:
             Updated volume fraction field.
         """
         p = self.params
-        # Explicit nonlinear part: g = f'(φ) - C*φ
         g = self.free_energy.chemical_potential(phi) - self._C * phi
-        g_hat = torch.fft.fft2(g)
-        phi_hat = torch.fft.fft2(phi)
+        g_hat = torch.fft.fftn(g)
+        phi_hat = torch.fft.fftn(phi)
 
         phi_hat_new = (phi_hat - p.dt * p.mobility * self._k2 * g_hat) / self._denom
-        return torch.fft.ifft2(phi_hat_new).real
+        return torch.fft.ifftn(phi_hat_new).real
 
     def run(
         self,
@@ -149,7 +146,7 @@ class CahnHilliardSolver:
         Parameters
         ----------
         phi0 : Tensor
-            Initial volume fraction field, shape (nx, ny).
+            Initial volume fraction field.
         n_steps : int
             Total number of time steps.
         save_interval : int
@@ -187,10 +184,13 @@ class CahnHilliardSolver:
         f_bulk = self.free_energy.free_energy_density(phi)
 
         # |nabla phi|^2 via spectral derivatives
-        phi_hat = torch.fft.fft2(phi)
-        dphi_dx = torch.fft.ifft2(1j * self._kx_grid * phi_hat).real
-        dphi_dy = torch.fft.ifft2(1j * self._ky_grid * phi_hat).real
-        grad_energy = 0.5 * p.kappa * (dphi_dx**2 + dphi_dy**2)
+        phi_hat = torch.fft.fftn(phi)
+        grad_sq = sum(
+            torch.fft.ifftn(1j * kg * phi_hat).real ** 2
+            for kg in self._k_grids
+        )
+        grad_energy = 0.5 * p.kappa * grad_sq
 
-        total = (f_bulk + grad_energy).sum() * p.dx**2
+        dV = p.dx ** p.ndim
+        total = (f_bulk + grad_energy).sum() * dV
         return total.item()

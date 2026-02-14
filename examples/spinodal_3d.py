@@ -1,7 +1,7 @@
-"""Spinodal decomposition of a symmetric polymer blend (2D).
+"""Spinodal decomposition of a symmetric polymer blend (3D).
 
-This example simulates the spinodal decomposition of a symmetric
-polymer blend (N_A = N_B = 100) with χ well above the critical value.
+This example simulates 3D spinodal decomposition and saves cross-section
+snapshots at z = Nz/2.
 """
 
 import matplotlib.pyplot as plt
@@ -22,13 +22,15 @@ def main() -> None:
     free_energy = FloryHuggins(chi=0.1, n_a=100, n_b=100)
     print(f"chi = {free_energy.chi}, chi_c = {free_energy.chi_critical:.4f}")
 
+    N = 64  # 64^3 grid
     params = SimulationParams(
-        shape=(128, 128),
+        shape=(N, N, N),
         dx=1.0,
         dt=0.5,
         mobility=1.0,
         kappa=0.5,
     )
+    print(f"Grid: {params.shape} ({params.ndim}D)")
 
     solver = CahnHilliardSolver(params, free_energy, device=device)
 
@@ -36,8 +38,8 @@ def main() -> None:
         *params.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42, device=device
     )
 
-    n_steps = 20000
-    save_interval = 4000
+    n_steps = 5000
+    save_interval = 1000
     print(f"Running {n_steps} steps...")
 
     snapshots = solver.run(phi0, n_steps=n_steps, save_interval=save_interval)
@@ -46,24 +48,27 @@ def main() -> None:
     for step, phi in snapshots:
         phi_dev = phi.to(device)
         fe = solver.compute_total_free_energy(phi_dev)
-        print(f"  step {step:6d}: F = {fe:.4f}")
+        print(f"  step {step:6d}: F = {fe:.2f}")
 
+    # Plot cross-sections at z = N/2
+    z_mid = N // 2
     n_snapshots = len(snapshots)
     fig, axes = plt.subplots(1, n_snapshots, figsize=(4 * n_snapshots, 4))
     if n_snapshots == 1:
         axes = [axes]
 
     for ax, (step, phi) in zip(axes, snapshots):
-        im = ax.imshow(phi.numpy().T, origin="lower", cmap="RdBu_r", vmin=0, vmax=1)
+        cross = phi[:, :, z_mid].numpy().T
+        im = ax.imshow(cross, origin="lower", cmap="RdBu_r", vmin=0, vmax=1)
         ax.set_title(f"t = {step * params.dt:.0f}")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
 
     fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.8)
-    fig.suptitle("Spinodal Decomposition (2D)", fontsize=14)
+    fig.suptitle(f"3D Spinodal Decomposition (z = {z_mid} cross-section)", fontsize=14)
     plt.tight_layout()
-    plt.savefig("spinodal_2d.png", dpi=150, bbox_inches="tight")
-    print("\nSaved spinodal_2d.png")
+    plt.savefig("spinodal_3d.png", dpi=150, bbox_inches="tight")
+    print(f"\nSaved spinodal_3d.png")
 
 
 if __name__ == "__main__":

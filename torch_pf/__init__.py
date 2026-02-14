@@ -2,13 +2,13 @@
 
 from .cahn_hilliard import CahnHilliardSolver, SimulationParams
 from .free_energy import DoubleWell, FloryHuggins
-from .initializers import circular_droplet, random_uniform
+from .initializers import droplet, random_uniform
 
 __all__ = [
     "CahnHilliardSolver",
     "DoubleWell",
     "FloryHuggins",
     "SimulationParams",
-    "circular_droplet",
+    "droplet",
     "random_uniform",
 ]
