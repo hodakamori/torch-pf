@@ -91,3 +91,77 @@ def droplet(
         1.0 - torch.tanh((r - radius) / interface_width)
     )
     return phi.clamp(1e-8, 1.0 - 1e-8)
+
+
+def random_nuclei(
+    *shape: int,
+    n_nuclei: int = 10,
+    phi_background: float = 0.05,
+    phi_nucleus: float = 0.9,
+    radius: float = 10.0,
+    interface_width: float = 4.0,
+    dx: float = 1.0,
+    seed: int | None = None,
+    device: torch.device | str = "cpu",
+) -> Tensor:
+    """Place multiple nuclei at random positions on a periodic domain.
+
+    Each nucleus is a tanh-profiled droplet.  Overlapping regions are
+    clamped to [0, 1].  Distances respect periodic boundary conditions.
+
+    Parameters
+    ----------
+    *shape : int
+        Grid dimensions, e.g. ``(128, 128)`` for 2D.
+    n_nuclei : int
+        Number of nuclei to place.
+    phi_background : float
+        Volume fraction of the metastable background.
+    phi_nucleus : float
+        Volume fraction at the centre of each nucleus.
+    radius : float
+        Radius of each nucleus (physical units).
+    interface_width : float
+        Width of the diffuse interface around each nucleus.
+    dx : float
+        Grid spacing.
+    seed : int or None
+        Random seed for reproducibility.
+    device : torch.device or str
+        Computation device.
+
+    Returns
+    -------
+    Tensor
+        Initial volume fraction field.
+    """
+    gen = torch.Generator(device="cpu")
+    if seed is not None:
+        gen.manual_seed(seed)
+
+    # Domain lengths in physical units
+    L = [n * dx for n in shape]
+
+    # Grid coordinates: [0, L)
+    coords = [torch.arange(n, device=device) * dx for n in shape]
+    grids = torch.meshgrid(*coords, indexing="ij")
+
+    # Random centre positions  (n_nuclei × ndim)
+    centres = [torch.rand(n_nuclei, generator=gen) * Li for Li in L]
+
+    phi = torch.full(shape, phi_background, device=device, dtype=torch.float32)
+    for i in range(n_nuclei):
+        # Minimum-image distance (periodic)
+        dist_sq = torch.zeros(shape, device=device)
+        for d, g in enumerate(grids):
+            diff = g - centres[d][i].to(device)
+            diff = diff - L[d] * torch.round(diff / L[d])
+            dist_sq = dist_sq + diff**2
+        r = dist_sq.sqrt()
+
+        bump = (phi_nucleus - phi_background) * 0.5 * (
+            1.0 - torch.tanh((r - radius) / interface_width)
+        )
+        phi = phi + bump
+
+    return phi.clamp(1e-8, 1.0 - 1e-8)

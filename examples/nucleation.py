@@ -1,12 +1,13 @@
 """Nucleation and growth in a metastable polymer blend (2D).
 
 Demonstrates the classical nucleation scenario using a double-well
-free energy:
+free energy with multiple randomly placed nuclei:
 
 - Background φ = 0.05 sits in the metastable region (between equilibrium
   φ = 0 and spinodal φ ≈ 0.21 for the double-well).
-- Supercritical nucleus (R = 15 > R_c ≈ 6): grows into a stable new phase.
-- Subcritical nucleus (R = 5 < R_c ≈ 6): shrinks back to the metastable state.
+- Supercritical nuclei (R = 15 > R_c ≈ 5): grow and eventually merge.
+- Subcritical nuclei (R = 4 < R_c ≈ 5): dissolve back to the uniform
+  metastable state.
 
 For the double-well f(φ) = W φ²(1−φ)²:
 - Equilibria: φ = 0, 1
@@ -22,7 +23,7 @@ from torch_pf import (
     FreeEnergyFunctional,
     GridParams,
     SpectralSolver,
-    droplet,
+    random_nuclei,
 )
 
 
@@ -34,33 +35,34 @@ def main() -> None:
     dw = DoubleWell(W=1.0)
     kappa = 4.0
     functional = FreeEnergyFunctional(local=dw, kappa=kappa)
-    grid = GridParams(shape=(128, 128), dx=1.0, dt=0.1)
+    grid = GridParams(shape=(256, 256), dx=1.0, dt=0.1)
     solver = SpectralSolver(functional, grid, mobility=1.0, device=device)
 
-    # --- Two nuclei: super- and sub-critical ---
-    phi_bg = 0.05       # metastable background (between equil. 0 and spinodal 0.21)
+    # --- Multiple random nuclei: super- and sub-critical ---
+    phi_bg = 0.05       # metastable background
     phi_nuc = 0.9        # nucleus composition
-    R_super = 15         # > R_c ≈ 6  → grows
-    R_sub = 5            # < R_c ≈ 6  → shrinks
+    n_nuclei = 8
+    R_super = 15         # > R_c ≈ 5  → grows and merges
+    R_sub = 4            # < R_c ≈ 5  → dissolves
 
-    phi0_super = droplet(
+    phi0_super = random_nuclei(
         *grid.shape,
-        phi_inside=phi_nuc, phi_outside=phi_bg,
-        radius=R_super, device=device,
+        n_nuclei=n_nuclei, phi_background=phi_bg, phi_nucleus=phi_nuc,
+        radius=R_super, seed=42, device=device,
     )
-    phi0_sub = droplet(
+    phi0_sub = random_nuclei(
         *grid.shape,
-        phi_inside=phi_nuc, phi_outside=phi_bg,
-        radius=R_sub, device=device,
+        n_nuclei=n_nuclei, phi_background=phi_bg, phi_nucleus=phi_nuc,
+        radius=R_sub, seed=42, device=device,
     )
 
     n_steps = 20000
     save_interval = 5000
-    print(f"Running {n_steps} steps ...")
+    print(f"Running {n_steps} steps ({n_nuclei} nuclei each) ...")
 
-    print("  Supercritical nucleus ...")
+    print("  Supercritical nuclei ...")
     snaps_super = solver.run(phi0_super, n_steps=n_steps, save_interval=save_interval)
-    print("  Subcritical nucleus ...")
+    print("  Subcritical nuclei ...")
     snaps_sub = solver.run(phi0_sub, n_steps=n_steps, save_interval=save_interval)
 
     # --- Plot ---
@@ -83,8 +85,8 @@ def main() -> None:
 
     fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.6)
     fig.suptitle(
-        rf"Nucleation ($\phi_{{bg}}={phi_bg}$, $W={dw.W}$, "
-        rf"$\kappa={kappa}$, $R_c \approx 6$)",
+        rf"Nucleation — {n_nuclei} random nuclei "
+        rf"($\phi_{{bg}}={phi_bg}$, $\kappa={kappa}$, $R_c \approx 5$)",
         fontsize=14,
     )
     plt.savefig("examples/results/nucleation.png", dpi=150, bbox_inches="tight")
