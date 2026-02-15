@@ -1,7 +1,7 @@
 """Block copolymer microphase separation (2D, Ohta-Kawasaki model).
 
 Demonstrates lamellae (φ̄ = 0.5) and cylinder/dot morphology (φ̄ = 0.35)
-driven by the competition between short-range (double-well) and
+driven by the competition between short-range (Flory-Huggins) and
 long-range (Ohta-Kawasaki) interactions.
 """
 
@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from torch_pf import (
-    DoubleWell,
+    FloryHuggins,
     FreeEnergyFunctional,
     GridParams,
     SpectralSolver,
@@ -28,7 +28,7 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    dw = DoubleWell(W=1.0)
+    fh = FloryHuggins(chi=0.5, n_a=100, n_b=100)
     N = 128
     grid = GridParams(shape=(N, N), dx=1.0, dt=0.5)
 
@@ -37,14 +37,14 @@ def main() -> None:
 
     # Larger α narrows the band of unstable modes, enforcing periodic order.
     #   α_max = |f''(φ̄)|² / (4κ)   [instability threshold]
-    #   φ̄=0.5  → |f''|=1.0,  α_max=0.50  → use α=0.30
-    #   φ̄=0.35 → |f''|=0.73, α_max=0.27  → use α=0.15
+    #   φ̄=0.5  → |f''|≈0.96,  α_max≈0.46  → use α=0.30
+    #   φ̄=0.35 → |f''|≈0.62,  α_max≈0.19  → use α=0.15
     alpha_lam = 0.30
     alpha_cyl = 0.15
     kappa = 0.5
 
-    func_lam = FreeEnergyFunctional(local=dw, kappa=kappa, alpha=alpha_lam)
-    func_cyl = FreeEnergyFunctional(local=dw, kappa=kappa, alpha=alpha_cyl)
+    func_lam = FreeEnergyFunctional(local=fh, kappa=kappa, alpha=alpha_lam)
+    func_cyl = FreeEnergyFunctional(local=fh, kappa=kappa, alpha=alpha_cyl)
 
     # --- Lamellae (symmetric, φ̄ = 0.5) ---
     print(f"Running lamellae (φ̄ = 0.5, α = {alpha_lam}) ...")
@@ -72,7 +72,7 @@ def main() -> None:
 
     fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.6)
     fig.suptitle(
-        rf"Ohta-Kawasaki Model ($\kappa={kappa}$, $W={dw.W}$)",
+        rf"Ohta-Kawasaki Model ($\kappa={kappa}$, $\chi={fh.chi}$)",
         fontsize=14,
     )
     plt.savefig("examples/results/block_copolymer_2d.png", dpi=150, bbox_inches="tight")

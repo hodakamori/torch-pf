@@ -24,13 +24,13 @@ are solved):
 Thermodynamics                      Kinetics + Numerics
 ──────────────                      ───────────────────
 FreeEnergy (ABC)                    GridParams
-├─ FloryHuggins                       shape, dx, dt
-└─ DoubleWell
-                                    SpectralSolver
-FreeEnergyFunctional                  mobility
-  local: FreeEnergy   ──────────►     functional
-  kappa: float                        device
-  alpha: float                        wall: WallCondition
+└─ FloryHuggins                       shape, dx, dt
+
+FreeEnergyFunctional                SpectralSolver
+  local: FreeEnergy   ──────────►     mobility
+  kappa: float                        functional
+  alpha: float                        device
+                                      wall: WallCondition
 
                                     WallCondition (ABC)
                                     └─ SurfaceEnergyWall
@@ -95,10 +95,6 @@ $$f(\phi) = \frac{\phi}{N_A} \ln \phi + \frac{1-\phi}{N_B} \ln(1-\phi) + \chi\,\
 - Critical point: $\chi_c = \frac{1}{2}\left(\frac{1}{\sqrt{N_A}} + \frac{1}{\sqrt{N_B}}\right)^2$
 - The log terms are smoothly replaced by quadratic extensions for $\phi < \varepsilon$ to avoid numerical divergence.
 
-### Double-well free energy
-
-$$f(\phi) = W\,\phi^2(1-\phi)^2$$
-
 ## Quick start
 
 ```python
@@ -120,9 +116,9 @@ snapshots = solver.run(phi0, n_steps=5000, save_interval=1000)
 For block-copolymer microphase separation, just set α > 0:
 
 ```python
-from torch_pf import DoubleWell, FreeEnergyFunctional, GridParams, SpectralSolver, random_uniform
+from torch_pf import FloryHuggins, FreeEnergyFunctional, GridParams, SpectralSolver, random_uniform
 
-functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5, alpha=0.3)
+functional = FreeEnergyFunctional(local=FloryHuggins(chi=0.5, n_a=100, n_b=100), kappa=0.5, alpha=0.3)
 grid = GridParams(shape=(128, 128), dx=1.0, dt=0.5)
 solver = SpectralSolver(functional, grid, mobility=1.0)
 ```

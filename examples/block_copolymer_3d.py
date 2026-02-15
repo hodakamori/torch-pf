@@ -12,7 +12,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from skimage.measure import marching_cubes
 
 from torch_pf import (
-    DoubleWell,
+    FloryHuggins,
     FreeEnergyFunctional,
     GridParams,
     SpectralSolver,
@@ -41,7 +41,8 @@ def main() -> None:
 
     N = 64
     alpha = 0.05
-    functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5, alpha=alpha)
+    fh = FloryHuggins(chi=0.5, n_a=100, n_b=100)
+    functional = FreeEnergyFunctional(local=fh, kappa=0.5, alpha=alpha)
     grid = GridParams(shape=(N, N, N), dx=1.0, dt=0.5)
 
     solver = SpectralSolver(functional, grid, mobility=1.0, device=device)

@@ -1,9 +1,8 @@
 """Free energy models and functionals for phase-field simulations.
 
-Local free energy densities
----------------------------
+Local free energy density
+-------------------------
 ``FloryHuggins`` -- Regularized Flory-Huggins for polymer blends.
-``DoubleWell``   -- Polynomial double-well f(φ) = W φ²(1−φ)².
 
 Free energy functional
 ----------------------
@@ -143,38 +142,6 @@ class FloryHuggins(FreeEnergy):
             + (1.0 / self.n_b) * _safe_log_deriv(1.0 - phi, eps)
             - 2.0 * self.chi
         )
-
-
-# ---------------------------------------------------------------------------
-# Polynomial double-well
-# ---------------------------------------------------------------------------
-
-
-class DoubleWell(FreeEnergy):
-    """Double-well free energy f(φ) = W φ²(1−φ)².
-
-    A simple and numerically robust model commonly used in Cahn-Hilliard
-    simulations.  The wells are at φ = 0 and φ = 1 with barrier height W/16.
-
-    Parameters
-    ----------
-    W : float
-        Barrier height parameter (controls the driving force for separation).
-    """
-
-    def __init__(self, W: float = 1.0) -> None:
-        self.W = W
-
-    def free_energy_density(self, phi: Tensor) -> Tensor:
-        return self.W * phi**2 * (1.0 - phi) ** 2
-
-    def chemical_potential(self, phi: Tensor) -> Tensor:
-        # f'(φ) = 2W φ(1−φ)(1−2φ)
-        return 2.0 * self.W * phi * (1.0 - phi) * (1.0 - 2.0 * phi)
-
-    def second_derivative(self, phi: Tensor) -> Tensor:
-        # f''(φ) = 2W(1 − 6φ + 6φ²)
-        return 2.0 * self.W * (1.0 - 6.0 * phi + 6.0 * phi**2)
 
 
 # ---------------------------------------------------------------------------

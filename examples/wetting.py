@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from torch_pf import (
-    DoubleWell,
+    FloryHuggins,
     FreeEnergyFunctional,
     GridParams,
     SpectralSolver,
@@ -33,7 +33,7 @@ def main() -> None:
     print(f"Using device: {device}")
 
     # --- Physics ---
-    functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5)
+    functional = FreeEnergyFunctional(local=FloryHuggins(chi=0.1, n_a=100, n_b=100), kappa=0.5)
     grid = GridParams(shape=(128, 64), dx=1.0, dt=0.1)
 
     # --- Channel walls (top & bottom) ---

@@ -4,7 +4,6 @@ import torch
 import pytest
 
 from torch_pf import (
-    DoubleWell,
     FloryHuggins,
     FreeEnergyFunctional,
     GridParams,
@@ -216,9 +215,9 @@ class TestSpectralSolver3D:
 
 class TestSpectralSolverOK2D:
     def setup_method(self):
-        self.dw = DoubleWell(W=1.0)
+        self.fh = FloryHuggins(chi=0.5, n_a=100, n_b=100)
         self.alpha = 0.05
-        self.functional = FreeEnergyFunctional(local=self.dw, kappa=0.5, alpha=self.alpha)
+        self.functional = FreeEnergyFunctional(local=self.fh, kappa=0.5, alpha=self.alpha)
         self.grid = GridParams(shape=(32, 32), dx=1.0, dt=0.1)
         self.solver = SpectralSolver(self.functional, self.grid, mobility=1.0)
 
@@ -251,7 +250,7 @@ class TestSpectralSolverOK2D:
     def test_long_range_energy_nonnegative(self):
         phi = random_uniform(32, 32, phi_mean=0.5, noise_amplitude=0.05, seed=42)
         fe_ok = self.solver.compute_total_free_energy(phi)
-        ch_func = FreeEnergyFunctional(local=self.dw, kappa=0.5)
+        ch_func = FreeEnergyFunctional(local=self.fh, kappa=0.5)
         ch_solver = SpectralSolver(ch_func, self.grid, mobility=1.0)
         fe_ch = ch_solver.compute_total_free_energy(phi)
         assert fe_ok >= fe_ch - 1e-6
@@ -267,8 +266,8 @@ class TestSpectralSolverOK2D:
 
 class TestSpectralSolverOK3D:
     def setup_method(self):
-        self.dw = DoubleWell(W=1.0)
-        self.functional = FreeEnergyFunctional(local=self.dw, kappa=0.5, alpha=0.05)
+        self.fh = FloryHuggins(chi=0.5, n_a=100, n_b=100)
+        self.functional = FreeEnergyFunctional(local=self.fh, kappa=0.5, alpha=0.05)
         self.grid = GridParams(shape=(16, 16, 16), dx=1.0, dt=0.1)
         self.solver = SpectralSolver(self.functional, self.grid, mobility=1.0)
 
@@ -300,7 +299,7 @@ class TestSpectralSolverOK3D:
 class TestSurfaceEnergyWall:
     def setup_method(self):
         self.grid = GridParams(shape=(32, 32), dx=1.0, dt=0.1)
-        self.functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5)
+        self.functional = FreeEnergyFunctional(local=FloryHuggins(chi=0.1, n_a=100, n_b=100), kappa=0.5)
         self.mask = channel_walls(*self.grid.shape, wall_thickness=3, axis=1)
 
     def test_surface_delta_concentrated_at_interface(self):
@@ -392,7 +391,7 @@ class TestSurfaceEnergyWall:
             self.functional, self.grid, mobility=1.0, wall=wall,
         )
         phi = random_uniform(*self.grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42)
-        for _ in range(500):
+        for _ in range(1000):
             phi = solver.step(phi)
         # Near the wall (y=0 and y=N-1) the average φ should be higher
         # than in the bulk (γ > 0 attracts φ=1)

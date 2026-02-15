@@ -17,12 +17,10 @@ Ohta-Kawasaki (α > 0)
 
 Wall confinement
 ----------------
-When a ``WallCondition`` is provided, its contribution is added to the
-chemical potential.  Two methods are available (see ``torch_pf.wall``):
+When a ``WallCondition`` (e.g. ``SurfaceEnergyWall``) is provided, its
+contribution is added to the chemical potential:
 
-* ``SurfaceEnergyWall``: μ_wall = −γ |∇Ω|   (physically motivated,
-  contact angle directly controlled via γ = σ cos θ)
-* ``VolumePenaltyWall``: μ_wall = λ Ω(φ − φ_wall)  (simple penalty)
+    μ_wall = −γ |∇Ω|
 
 A stabilised semi-implicit spectral scheme is used:
 
@@ -93,8 +91,7 @@ class SpectralSolver:
     stabilization : float | None
         Stabilisation constant C.  If None, estimated from max |f''|.
     wall : WallCondition | None
-        Wall boundary condition.  See ``SurfaceEnergyWall`` and
-        ``VolumePenaltyWall`` for available methods.
+        Wall boundary condition.  See ``SurfaceEnergyWall``.
     """
 
     def __init__(
