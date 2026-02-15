@@ -34,9 +34,14 @@ FreeEnergyFunctional                  mobility
 ```
 
 - **`FreeEnergyFunctional`** bundles `f(φ)`, κ, and α into a single thermodynamic object.
-  Set `alpha=0` for standard Cahn-Hilliard, or `alpha>0` for Ohta-Kawasaki.
 - **`SpectralSolver`** handles the dynamics and numerical scheme.
-  A single solver class covers both CH and OK.
+  A single solver class covers both CH and OK — the `alpha` parameter
+  controls which regime:
+
+| Condition | Physical model | Typical use case |
+|---|---|---|
+| `alpha = 0` (default) | **Cahn-Hilliard** — local + gradient only | Spinodal decomposition, nucleation and growth |
+| `alpha > 0` | **Ohta-Kawasaki** — adds long-range repulsion | Block-copolymer microphase separation (lamellae, cylinders, spheres) |
 
 ## Equations
 
@@ -101,12 +106,13 @@ solver = SpectralSolver(functional, grid, mobility=1.0)
 
 ## Examples
 
-| Script | Description |
-|---|---|
-| `examples/spinodal_decomposition.py` | 2D spinodal decomposition (Flory-Huggins) |
-| `examples/spinodal_3d.py` | 3D spinodal decomposition with isosurface rendering |
-| `examples/block_copolymer_2d.py` | 2D Ohta-Kawasaki: lamellae and cylinder morphologies |
-| `examples/block_copolymer_3d.py` | 3D Ohta-Kawasaki: gyroid / lamellar structures |
+| Script | Model | Description |
+|---|---|---|
+| `examples/spinodal_decomposition.py` | CH (α=0) | 2D spinodal decomposition (Flory-Huggins) |
+| `examples/spinodal_3d.py` | CH (α=0) | 3D spinodal decomposition with isosurface rendering |
+| `examples/nucleation.py` | CH (α=0) | Nucleation: super- vs sub-critical nucleus in metastable state |
+| `examples/block_copolymer_2d.py` | OK (α>0) | 2D Ohta-Kawasaki: lamellae and cylinder morphologies |
+| `examples/block_copolymer_3d.py` | OK (α>0) | 3D Ohta-Kawasaki: gyroid / lamellar structures |
 
 ## Project structure
 
