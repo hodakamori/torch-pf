@@ -4,11 +4,11 @@ import torch
 import pytest
 
 from torch_pf import (
-    CahnHilliardSolver,
     DoubleWell,
     FloryHuggins,
-    OhtaKawasakiSolver,
-    SimulationParams,
+    FreeEnergyFunctional,
+    GridParams,
+    SpectralSolver,
     random_uniform,
     droplet,
 )
@@ -108,11 +108,12 @@ class TestInitializers:
         assert phi[0, 0, 0].item() < 0.3
 
 
-class TestCahnHilliardSolver2D:
+class TestSpectralSolver2D:
     def setup_method(self):
-        self.params = SimulationParams(shape=(32, 32), dx=1.0, dt=0.1, mobility=1.0, kappa=0.5)
         self.fh = FloryHuggins(chi=0.03, n_a=100, n_b=100)
-        self.solver = CahnHilliardSolver(self.params, self.fh)
+        self.functional = FreeEnergyFunctional(local=self.fh, kappa=0.5)
+        self.grid = GridParams(shape=(32, 32), dx=1.0, dt=0.1)
+        self.solver = SpectralSolver(self.functional, self.grid, mobility=1.0)
 
     def test_step_preserves_shape(self):
         phi = random_uniform(32, 32, seed=42)
@@ -151,7 +152,8 @@ class TestCahnHilliardSolver2D:
 
     def test_homogeneous_state_stable_below_chi_c(self):
         fh_stable = FloryHuggins(chi=0.01, n_a=100, n_b=100)
-        solver = CahnHilliardSolver(self.params, fh_stable)
+        func = FreeEnergyFunctional(local=fh_stable, kappa=0.5)
+        solver = SpectralSolver(func, self.grid, mobility=1.0)
         phi = random_uniform(32, 32, phi_mean=0.5, noise_amplitude=0.001, seed=42)
         std_initial = phi.std().item()
         for _ in range(200):
@@ -162,15 +164,16 @@ class TestCahnHilliardSolver2D:
     def test_compute_total_free_energy(self):
         phi = torch.full((32, 32), 0.5)
         fe = self.solver.compute_total_free_energy(phi)
-        expected_bulk = self.fh.free_energy_density(phi).sum().item() * self.params.dx**2
+        expected_bulk = self.fh.free_energy_density(phi).sum().item() * self.grid.dx**2
         assert abs(fe - expected_bulk) < 1e-6
 
 
-class TestCahnHilliardSolver3D:
+class TestSpectralSolver3D:
     def setup_method(self):
-        self.params = SimulationParams(shape=(16, 16, 16), dx=1.0, dt=0.1, mobility=1.0, kappa=0.5)
         self.fh = FloryHuggins(chi=0.03, n_a=100, n_b=100)
-        self.solver = CahnHilliardSolver(self.params, self.fh)
+        self.functional = FreeEnergyFunctional(local=self.fh, kappa=0.5)
+        self.grid = GridParams(shape=(16, 16, 16), dx=1.0, dt=0.1)
+        self.solver = SpectralSolver(self.functional, self.grid, mobility=1.0)
 
     def test_step_preserves_shape(self):
         phi = random_uniform(16, 16, 16, seed=42)
@@ -202,19 +205,20 @@ class TestCahnHilliardSolver3D:
     def test_compute_total_free_energy_3d(self):
         phi = torch.full((16, 16, 16), 0.5)
         fe = self.solver.compute_total_free_energy(phi)
-        expected_bulk = self.fh.free_energy_density(phi).sum().item() * self.params.dx**3
+        expected_bulk = self.fh.free_energy_density(phi).sum().item() * self.grid.dx**3
         assert abs(fe - expected_bulk) < 1e-6
 
     def test_ndim(self):
-        assert self.params.ndim == 3
+        assert self.grid.ndim == 3
 
 
-class TestOhtaKawasakiSolver2D:
+class TestSpectralSolverOK2D:
     def setup_method(self):
-        self.params = SimulationParams(shape=(32, 32), dx=1.0, dt=0.1, mobility=1.0, kappa=0.5)
         self.dw = DoubleWell(W=1.0)
         self.alpha = 0.05
-        self.solver = OhtaKawasakiSolver(self.params, self.dw, alpha=self.alpha)
+        self.functional = FreeEnergyFunctional(local=self.dw, kappa=0.5, alpha=self.alpha)
+        self.grid = GridParams(shape=(32, 32), dx=1.0, dt=0.1)
+        self.solver = SpectralSolver(self.functional, self.grid, mobility=1.0)
 
     def test_step_preserves_shape(self):
         phi = random_uniform(32, 32, seed=42)
@@ -245,7 +249,8 @@ class TestOhtaKawasakiSolver2D:
     def test_long_range_energy_nonnegative(self):
         phi = random_uniform(32, 32, phi_mean=0.5, noise_amplitude=0.05, seed=42)
         fe_ok = self.solver.compute_total_free_energy(phi)
-        ch_solver = CahnHilliardSolver(self.params, self.dw)
+        ch_func = FreeEnergyFunctional(local=self.dw, kappa=0.5)
+        ch_solver = SpectralSolver(ch_func, self.grid, mobility=1.0)
         fe_ch = ch_solver.compute_total_free_energy(phi)
         assert fe_ok >= fe_ch - 1e-6
 
@@ -258,11 +263,12 @@ class TestOhtaKawasakiSolver2D:
         assert snapshots[2][0] == 100
 
 
-class TestOhtaKawasakiSolver3D:
+class TestSpectralSolverOK3D:
     def setup_method(self):
-        self.params = SimulationParams(shape=(16, 16, 16), dx=1.0, dt=0.1, mobility=1.0, kappa=0.5)
         self.dw = DoubleWell(W=1.0)
-        self.solver = OhtaKawasakiSolver(self.params, self.dw, alpha=0.05)
+        self.functional = FreeEnergyFunctional(local=self.dw, kappa=0.5, alpha=0.05)
+        self.grid = GridParams(shape=(16, 16, 16), dx=1.0, dt=0.1)
+        self.solver = SpectralSolver(self.functional, self.grid, mobility=1.0)
 
     def test_step_preserves_shape(self):
         phi = random_uniform(16, 16, 16, seed=42)

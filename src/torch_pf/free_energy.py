@@ -1,25 +1,35 @@
-"""Free energy models for binary polymer blends.
+"""Free energy models and functionals for phase-field simulations.
 
-Two models are provided:
+Local free energy densities
+---------------------------
+``FloryHuggins`` -- Regularized Flory-Huggins for polymer blends.
+``DoubleWell``   -- Polynomial double-well f(φ) = W φ²(1−φ)².
 
-1. ``FloryHuggins`` -- Regularized Flory-Huggins free energy with smooth
-   logarithmic extension outside [ε, 1−ε] to avoid singularities.
+Free energy functional
+----------------------
+``FreeEnergyFunctional`` -- Bundles the local free energy density f(φ),
+the gradient coefficient κ, and the optional long-range (Ohta-Kawasaki)
+interaction strength α into a single thermodynamic description:
 
-2. ``DoubleWell`` -- Polynomial double-well free energy of the form
-   f(φ) = W φ²(1−φ)², which is numerically robust and widely used in
-   phase-field simulations.
+    F[φ] = ∫ [f(φ) + (κ/2)|∇φ|²] dr + (α/2) ∫∫ G(φ−φ̄)(φ−φ̄) dr dr'
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import torch
 from torch import Tensor
 
 
+# ---------------------------------------------------------------------------
+# Abstract base
+# ---------------------------------------------------------------------------
+
+
 class FreeEnergy(ABC):
-    """Abstract base class for free energy models."""
+    """Abstract base class for local free energy densities f(φ)."""
 
     @abstractmethod
     def free_energy_density(self, phi: Tensor) -> Tensor: ...
@@ -27,10 +37,14 @@ class FreeEnergy(ABC):
     @abstractmethod
     def chemical_potential(self, phi: Tensor) -> Tensor: ...
 
+    @abstractmethod
+    def second_derivative(self, phi: Tensor) -> Tensor: ...
+
 
 # ---------------------------------------------------------------------------
 # Regularized Flory-Huggins
 # ---------------------------------------------------------------------------
+
 
 def _safe_log(x: Tensor, eps: float = 0.01) -> Tensor:
     """Logarithm with smooth quadratic extension for x < eps.
@@ -161,3 +175,30 @@ class DoubleWell(FreeEnergy):
     def second_derivative(self, phi: Tensor) -> Tensor:
         # f''(φ) = 2W(1 − 6φ + 6φ²)
         return 2.0 * self.W * (1.0 - 6.0 * phi + 6.0 * phi**2)
+
+
+# ---------------------------------------------------------------------------
+# Free energy functional  F[φ]
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FreeEnergyFunctional:
+    """Complete free energy functional F[φ].
+
+    F[φ] = ∫ [f(φ) + (κ/2)|∇φ|²] dr  +  (α/2) ∫∫ G(φ−φ̄)(φ−φ̄) dr dr'
+
+    Parameters
+    ----------
+    local : FreeEnergy
+        Local free energy density f(φ).
+    kappa : float
+        Gradient energy coefficient κ  (controls interface width / energy).
+    alpha : float
+        Long-range interaction strength (Ohta-Kawasaki).
+        Set to 0 for standard Cahn-Hilliard behaviour.
+    """
+
+    local: FreeEnergy
+    kappa: float
+    alpha: float = 0.0

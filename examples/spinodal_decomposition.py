@@ -8,9 +8,10 @@ import matplotlib.pyplot as plt
 import torch
 
 from torch_pf import (
-    CahnHilliardSolver,
     FloryHuggins,
-    SimulationParams,
+    FreeEnergyFunctional,
+    GridParams,
+    SpectralSolver,
     random_uniform,
 )
 
@@ -19,21 +20,15 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    free_energy = FloryHuggins(chi=0.1, n_a=100, n_b=100)
-    print(f"chi = {free_energy.chi}, chi_c = {free_energy.chi_critical:.4f}")
+    fe = FloryHuggins(chi=0.1, n_a=100, n_b=100)
+    print(f"chi = {fe.chi}, chi_c = {fe.chi_critical:.4f}")
 
-    params = SimulationParams(
-        shape=(128, 128),
-        dx=1.0,
-        dt=0.5,
-        mobility=1.0,
-        kappa=0.5,
-    )
-
-    solver = CahnHilliardSolver(params, free_energy, device=device)
+    functional = FreeEnergyFunctional(local=fe, kappa=0.5)
+    grid = GridParams(shape=(128, 128), dx=1.0, dt=0.5)
+    solver = SpectralSolver(functional, grid, mobility=1.0, device=device)
 
     phi0 = random_uniform(
-        *params.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42, device=device
+        *grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42, device=device
     )
 
     n_steps = 20000
@@ -45,8 +40,8 @@ def main() -> None:
     print("\nFree energy evolution:")
     for step, phi in snapshots:
         phi_dev = phi.to(device)
-        fe = solver.compute_total_free_energy(phi_dev)
-        print(f"  step {step:6d}: F = {fe:.4f}")
+        fe_val = solver.compute_total_free_energy(phi_dev)
+        print(f"  step {step:6d}: F = {fe_val:.4f}")
 
     n_snapshots = len(snapshots)
     fig, axes = plt.subplots(1, n_snapshots, figsize=(4 * n_snapshots, 4))
@@ -55,7 +50,7 @@ def main() -> None:
 
     for ax, (step, phi) in zip(axes, snapshots):
         im = ax.imshow(phi.numpy().T, origin="lower", cmap="RdBu_r", vmin=0, vmax=1)
-        ax.set_title(f"t = {step * params.dt:.0f}")
+        ax.set_title(f"t = {step * grid.dt:.0f}")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
 

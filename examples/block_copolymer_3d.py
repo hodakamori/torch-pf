@@ -13,8 +13,9 @@ from skimage.measure import marching_cubes
 
 from torch_pf import (
     DoubleWell,
-    OhtaKawasakiSolver,
-    SimulationParams,
+    FreeEnergyFunctional,
+    GridParams,
+    SpectralSolver,
     random_uniform,
 )
 
@@ -38,14 +39,14 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    free_energy = DoubleWell(W=1.0)
     N = 64
-    params = SimulationParams(shape=(N, N, N), dx=1.0, dt=0.5, mobility=1.0, kappa=0.5)
     alpha = 0.05
+    functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5, alpha=alpha)
+    grid = GridParams(shape=(N, N, N), dx=1.0, dt=0.5)
 
-    solver = OhtaKawasakiSolver(params, free_energy, alpha=alpha, device=device)
+    solver = SpectralSolver(functional, grid, mobility=1.0, device=device)
 
-    phi0 = random_uniform(*params.shape, phi_mean=0.35, noise_amplitude=0.05, seed=42, device=device)
+    phi0 = random_uniform(*grid.shape, phi_mean=0.35, noise_amplitude=0.05, seed=42, device=device)
 
     n_steps = 5000
     save_interval = 1000
@@ -66,7 +67,7 @@ def main() -> None:
     for i, (step, phi) in enumerate(plot_snapshots):
         ax = fig.add_subplot(1, n_plots, i + 1, projection="3d")
         plot_isosurface(ax, phi.numpy(), level=0.5, color="#2060b0", alpha=0.6)
-        ax.set_title(f"t = {step * params.dt:.0f}", fontsize=12)
+        ax.set_title(f"t = {step * grid.dt:.0f}", fontsize=12)
         ax.view_init(elev=25, azim=-60)
 
     fig.suptitle(

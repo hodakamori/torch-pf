@@ -10,15 +10,17 @@ import torch
 
 from torch_pf import (
     DoubleWell,
-    OhtaKawasakiSolver,
-    SimulationParams,
+    FreeEnergyFunctional,
+    GridParams,
+    SpectralSolver,
     random_uniform,
 )
 
 
-def run_ok(phi_mean: float, params: SimulationParams, free_energy, alpha, device, n_steps, save_interval):
-    solver = OhtaKawasakiSolver(params, free_energy, alpha=alpha, device=device)
-    phi0 = random_uniform(*params.shape, phi_mean=phi_mean, noise_amplitude=0.05, seed=42, device=device)
+def run_ok(phi_mean: float, functional: FreeEnergyFunctional, grid: GridParams,
+           device, n_steps, save_interval):
+    solver = SpectralSolver(functional, grid, mobility=1.0, device=device)
+    phi0 = random_uniform(*grid.shape, phi_mean=phi_mean, noise_amplitude=0.05, seed=42, device=device)
     return solver, solver.run(phi0, n_steps=n_steps, save_interval=save_interval)
 
 
@@ -26,9 +28,9 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    free_energy = DoubleWell(W=1.0)
+    dw = DoubleWell(W=1.0)
     N = 128
-    params = SimulationParams(shape=(N, N), dx=1.0, dt=0.5, mobility=1.0, kappa=0.5)
+    grid = GridParams(shape=(N, N), dx=1.0, dt=0.5)
 
     n_steps = 30000
     save_interval = 7500
@@ -39,14 +41,18 @@ def main() -> None:
     #   φ̄=0.35 → |f''|=0.73, α_max=0.27  → use α=0.15
     alpha_lam = 0.30
     alpha_cyl = 0.15
+    kappa = 0.5
+
+    func_lam = FreeEnergyFunctional(local=dw, kappa=kappa, alpha=alpha_lam)
+    func_cyl = FreeEnergyFunctional(local=dw, kappa=kappa, alpha=alpha_cyl)
 
     # --- Lamellae (symmetric, φ̄ = 0.5) ---
     print(f"Running lamellae (φ̄ = 0.5, α = {alpha_lam}) ...")
-    solver_lam, snaps_lam = run_ok(0.5, params, free_energy, alpha_lam, device, n_steps, save_interval)
+    solver_lam, snaps_lam = run_ok(0.5, func_lam, grid, device, n_steps, save_interval)
 
     # --- Cylinders / dots (asymmetric, φ̄ = 0.35) ---
     print(f"Running cylinders (φ̄ = 0.35, α = {alpha_cyl}) ...")
-    solver_cyl, snaps_cyl = run_ok(0.35, params, free_energy, alpha_cyl, device, n_steps, save_interval)
+    solver_cyl, snaps_cyl = run_ok(0.35, func_cyl, grid, device, n_steps, save_interval)
 
     # --- Plot ---
     n_cols = len(snaps_lam)
@@ -59,14 +65,14 @@ def main() -> None:
         for col, (step, phi) in enumerate(snaps):
             ax = axes[row, col]
             im = ax.imshow(phi.numpy().T, origin="lower", cmap="RdBu_r", vmin=0, vmax=1)
-            ax.set_title(f"t = {step * params.dt:.0f}", fontsize=11)
+            ax.set_title(f"t = {step * grid.dt:.0f}", fontsize=11)
             if col == 0:
                 ax.set_ylabel(label, fontsize=12)
             ax.set_xlabel("x")
 
     fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.6)
     fig.suptitle(
-        rf"Ohta-Kawasaki Model ($\kappa={params.kappa}$, $W={free_energy.W}$)",
+        rf"Ohta-Kawasaki Model ($\kappa={kappa}$, $W={dw.W}$)",
         fontsize=14,
     )
     plt.savefig("examples/results/block_copolymer_2d.png", dpi=150, bbox_inches="tight")

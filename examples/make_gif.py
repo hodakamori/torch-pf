@@ -3,13 +3,14 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from torch_pf import CahnHilliardSolver, FloryHuggins, SimulationParams, random_uniform
+from torch_pf import FloryHuggins, FreeEnergyFunctional, GridParams, SpectralSolver, random_uniform
 
 
 def main() -> None:
-    free_energy = FloryHuggins(chi=0.1, n_a=100, n_b=100)
-    params = SimulationParams(shape=(128, 128), dx=1.0, dt=0.5, mobility=1.0, kappa=0.5)
-    solver = CahnHilliardSolver(params, free_energy)
+    fe = FloryHuggins(chi=0.1, n_a=100, n_b=100)
+    functional = FreeEnergyFunctional(local=fe, kappa=0.5)
+    grid = GridParams(shape=(128, 128), dx=1.0, dt=0.5)
+    solver = SpectralSolver(functional, grid, mobility=1.0)
 
     phi0 = random_uniform(128, 128, phi_mean=0.5, noise_amplitude=0.05, seed=42)
 
@@ -32,14 +33,14 @@ def main() -> None:
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     fig.suptitle(
-        f"Spinodal Decomposition ($N={int(free_energy.n_a)},\\ \\chi={free_energy.chi}$)",
+        f"Spinodal Decomposition ($N={int(fe.n_a)},\\ \\chi={fe.chi}$)",
         fontsize=13,
     )
 
     def update(frame_idx: int):
         step, phi = snapshots[frame_idx]
         im.set_data(phi.numpy().T)
-        title.set_text(f"t = {step * params.dt:.0f}")
+        title.set_text(f"t = {step * grid.dt:.0f}")
         return [im, title]
 
     ani = animation.FuncAnimation(

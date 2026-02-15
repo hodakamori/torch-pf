@@ -1,16 +1,15 @@
-"""torch-pf: Phase-field simulation for polymer blends using PyTorch."""
+"""torch-pf: Phase-field simulation for polymer systems using PyTorch."""
 
-from .cahn_hilliard import CahnHilliardSolver, SimulationParams
-from .free_energy import DoubleWell, FloryHuggins
+from .free_energy import DoubleWell, FloryHuggins, FreeEnergyFunctional
 from .initializers import droplet, random_uniform
-from .ohta_kawasaki import OhtaKawasakiSolver
+from .solver import GridParams, SpectralSolver
 
 __all__ = [
-    "CahnHilliardSolver",
     "DoubleWell",
     "FloryHuggins",
-    "OhtaKawasakiSolver",
-    "SimulationParams",
+    "FreeEnergyFunctional",
+    "GridParams",
+    "SpectralSolver",
     "droplet",
     "random_uniform",
 ]
