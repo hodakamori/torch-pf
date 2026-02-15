@@ -1,11 +1,7 @@
 """Wall boundary conditions for phase-field simulations.
 
-Provides pluggable wall conditions that contribute to the chemical
-potential and free energy.  Two implementations are available:
-
-VolumePenaltyWall
-    Original penalty method: μ_wall = λ Ω(r)(φ − φ_wall).
-    Simple but the contact angle depends indirectly on λ and φ_wall.
+Provides a pluggable wall condition that contributes to the chemical
+potential and free energy via surface energy coupling.
 
 SurfaceEnergyWall
     Surface energy (wetting) method: μ_wall = −γ |∇Ω|.
@@ -47,69 +43,6 @@ class WallCondition(ABC):
     def stabilization_estimate(self) -> float:
         """Additional stabilisation constant needed for this wall type."""
         ...
-
-
-# ---------------------------------------------------------------------------
-# Volume-penalty wall (original method)
-# ---------------------------------------------------------------------------
-
-
-class VolumePenaltyWall(WallCondition):
-    """Volume-penalty wall confinement.
-
-    Adds a penalty term to the chemical potential inside the wall region:
-
-        μ_wall = λ Ω(r) (φ − φ_wall)
-
-    and a corresponding energy:
-
-        F_wall = (λ/2) ∫ Ω(r) (φ − φ_wall)² dr
-
-    Parameters
-    ----------
-    mask : Tensor
-        Smooth wall mask Ω(r): 0 = fluid, 1 = wall.
-    phi_wall : float
-        Preferred composition inside the wall.
-    penalty : float
-        Penalty strength λ.
-    """
-
-    def __init__(
-        self,
-        mask: Tensor,
-        phi_wall: float = 0.5,
-        penalty: float = 10.0,
-    ) -> None:
-        self.mask = mask
-        self.phi_wall = phi_wall
-        self.penalty = penalty
-
-    def to(self, device: torch.device | str) -> VolumePenaltyWall:
-        return VolumePenaltyWall(
-            self.mask.to(device),
-            phi_wall=self.phi_wall,
-            penalty=self.penalty,
-        )
-
-    def chemical_potential_contribution(self, phi: Tensor) -> Tensor:
-        return self.penalty * self.mask * (phi - self.phi_wall)
-
-    def energy_contribution(self, phi: Tensor, dV: float) -> float:
-        return (
-            0.5
-            * self.penalty
-            * (self.mask * (phi - self.phi_wall) ** 2).sum().item()
-            * dV
-        )
-
-    def stabilization_estimate(self) -> float:
-        return self.penalty
-
-
-# ---------------------------------------------------------------------------
-# Surface-energy (wetting) wall
-# ---------------------------------------------------------------------------
 
 
 class SurfaceEnergyWall(WallCondition):

@@ -33,8 +33,7 @@ FreeEnergyFunctional                  mobility
   alpha: float                        wall: WallCondition
 
                                     WallCondition (ABC)
-                                    ├─ SurfaceEnergyWall
-                                    └─ VolumePenaltyWall
+                                    └─ SurfaceEnergyWall
 ```
 
 - **`FreeEnergyFunctional`** bundles `f(φ)`, κ, and α into a single thermodynamic object.
@@ -47,26 +46,25 @@ FreeEnergyFunctional                  mobility
 | `alpha = 0` (default) | **Cahn-Hilliard** — local + gradient only | Spinodal decomposition, nucleation and growth |
 | `alpha > 0` | **Ohta-Kawasaki** — adds long-range repulsion | Block-copolymer microphase separation (lamellae, cylinders, spheres) |
 
-Solid walls can be added via pluggable **wall conditions**:
+Solid walls can be added via the **surface energy method**:
 
 ```python
-from torch_pf import SurfaceEnergyWall, VolumePenaltyWall, channel_walls
+from torch_pf import SurfaceEnergyWall, channel_walls
 
 mask = channel_walls(256, 64, wall_thickness=5, axis=1)
-
-# Surface energy method (recommended) — γ = σ cos(θ) directly controls contact angle
-wall = SurfaceEnergyWall(mask, gamma=0.5, dx=1.0)
-
-# Volume-penalty method (legacy) — penalty drives φ → φ_wall inside the wall
-wall = VolumePenaltyWall(mask, phi_wall=1.0, penalty=10.0)
-
+wall = SurfaceEnergyWall(mask, gamma=0.3, dx=1.0)
 solver = SpectralSolver(functional, grid, mobility=1.0, wall=wall)
 ```
 
-| Wall method | Chemical potential contribution | Contact angle control |
-|---|---|---|
-| `SurfaceEnergyWall(mask, γ)` | $-\gamma\,\lvert\nabla\Omega\rvert$ | Direct: $\gamma = \sigma\cos\theta$ |
-| `VolumePenaltyWall(mask, φ_w, λ)` | $\lambda\,\Omega(\phi - \phi_w)$ | Indirect via $\phi_w$ and $\lambda$ |
+The surface energy $F_s = -\gamma \int \phi\,|\nabla\Omega|\,d\mathbf{r}$ adds
+$\mu_{\mathrm{wall}} = -\gamma\,|\nabla\Omega|$ to the chemical potential.
+The parameter $\gamma = \sigma\cos\theta$ directly controls the contact angle:
+
+| γ | Wetting behaviour |
+|---|---|
+| γ > 0 | Wall attracts φ = 1 phase (θ < 90°) |
+| γ = 0 | Neutral wetting (θ = 90°) |
+| γ < 0 | Wall attracts φ = 0 phase (θ > 90°) |
 
 ## Equations
 
@@ -146,7 +144,7 @@ solver = SpectralSolver(functional, grid, mobility=1.0)
 src/torch_pf/
   free_energy.py      Free energy models + FreeEnergyFunctional
   solver.py           SpectralSolver + GridParams
-  wall.py             Wall conditions (SurfaceEnergyWall, VolumePenaltyWall)
+  wall.py             Wall condition (SurfaceEnergyWall)
   initializers.py     Initial condition generators
 examples/             Example scripts
 tests/                Tests

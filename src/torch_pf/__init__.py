@@ -3,7 +3,7 @@
 from .free_energy import DoubleWell, FloryHuggins, FreeEnergyFunctional
 from .initializers import channel_walls, droplet, random_nuclei, random_uniform
 from .solver import GridParams, SpectralSolver
-from .wall import SurfaceEnergyWall, VolumePenaltyWall, WallCondition
+from .wall import SurfaceEnergyWall, WallCondition
 
 __all__ = [
     "DoubleWell",
@@ -12,7 +12,6 @@ __all__ = [
     "GridParams",
     "SpectralSolver",
     "SurfaceEnergyWall",
-    "VolumePenaltyWall",
     "WallCondition",
     "channel_walls",
     "droplet",

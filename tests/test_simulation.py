@@ -10,7 +10,6 @@ from torch_pf import (
     GridParams,
     SpectralSolver,
     SurfaceEnergyWall,
-    VolumePenaltyWall,
     channel_walls,
     random_uniform,
     droplet,
@@ -296,70 +295,6 @@ class TestSpectralSolverOK3D:
 # ======================================================================
 # Wall condition tests
 # ======================================================================
-
-
-class TestVolumePenaltyWall:
-    def setup_method(self):
-        self.grid = GridParams(shape=(32, 32), dx=1.0, dt=0.1)
-        self.functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5)
-        self.mask = channel_walls(*self.grid.shape, wall_thickness=3, axis=1)
-
-    def test_chemical_potential_zero_at_wall_phi(self):
-        wall = VolumePenaltyWall(self.mask, phi_wall=0.5, penalty=10.0)
-        phi = torch.full(self.grid.shape, 0.5)
-        mu = wall.chemical_potential_contribution(phi)
-        assert mu.abs().max().item() < 1e-6
-
-    def test_chemical_potential_nonzero_away_from_wall_phi(self):
-        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
-        phi = torch.full(self.grid.shape, 0.5)
-        mu = wall.chemical_potential_contribution(phi)
-        # Should be non-zero where mask > 0
-        assert mu.abs().max().item() > 0
-
-    def test_energy_zero_at_wall_phi(self):
-        wall = VolumePenaltyWall(self.mask, phi_wall=0.5, penalty=10.0)
-        phi = torch.full(self.grid.shape, 0.5)
-        e = wall.energy_contribution(phi, dV=1.0)
-        assert abs(e) < 1e-6
-
-    def test_energy_positive_away_from_wall_phi(self):
-        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
-        phi = torch.full(self.grid.shape, 0.5)
-        e = wall.energy_contribution(phi, dV=1.0)
-        assert e > 0
-
-    def test_stabilization_estimate(self):
-        wall = VolumePenaltyWall(self.mask, penalty=10.0)
-        assert wall.stabilization_estimate() == 10.0
-
-    def test_to_device(self):
-        wall = VolumePenaltyWall(self.mask, penalty=10.0)
-        wall_cpu = wall.to("cpu")
-        assert wall_cpu.mask.device.type == "cpu"
-
-    def test_mass_conservation_with_solver(self):
-        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
-        solver = SpectralSolver(
-            self.functional, self.grid, mobility=1.0, wall=wall,
-        )
-        phi = random_uniform(*self.grid.shape, phi_mean=0.5, seed=42)
-        total_0 = phi.sum().item()
-        for _ in range(100):
-            phi = solver.step(phi)
-        assert abs(phi.sum().item() - total_0) < 1e-3
-
-    def test_free_energy_decreases_with_solver(self):
-        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
-        solver = SpectralSolver(
-            self.functional, self.grid, mobility=1.0, wall=wall,
-        )
-        phi = random_uniform(*self.grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42)
-        fe_initial = solver.compute_total_free_energy(phi)
-        for _ in range(500):
-            phi = solver.step(phi)
-        fe_final = solver.compute_total_free_energy(phi)
-        assert fe_final < fe_initial
 
 
 class TestSurfaceEnergyWall:

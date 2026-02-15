@@ -39,8 +39,8 @@ def main() -> None:
     # --- Channel walls (top & bottom) ---
     mask = channel_walls(*grid.shape, wall_thickness=5, axis=1, device=device)
 
-    # --- Sweep over γ: strong A-wetting → neutral → strong B-wetting ---
-    gammas = [1.0, 0.3, 0.0, -0.3, -1.0]
+    # --- Sweep over γ: A-wetting → neutral → B-wetting ---
+    gammas = [0.3, 0.1, 0.0, -0.1, -0.3]
 
     n_steps = 20000
 
