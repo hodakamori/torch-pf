@@ -1,7 +1,11 @@
-"""Compare wall wetting methods and surface energy strengths.
+"""Compare SurfaceEnergyWall vs VolumePenaltyWall methods.
 
-Shows how different γ values in ``SurfaceEnergyWall`` control the
-wetting behaviour, and contrasts them with the ``VolumePenaltyWall``.
+Runs the same spinodal decomposition in a channel using both wall
+methods and compares the resulting morphologies and wall-normal
+profiles side-by-side.
+
+Left columns:  SurfaceEnergyWall with different γ values
+Right column:  VolumePenaltyWall (legacy method) for reference
 """
 
 import matplotlib.pyplot as plt
@@ -21,28 +25,31 @@ from torch_pf import (
 
 def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
 
     functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5)
     grid = GridParams(shape=(128, 64), dx=1.0, dt=0.1)
 
     mask = channel_walls(*grid.shape, wall_thickness=5, axis=1, device=device)
 
-    # Different surface energy strengths (γ = σ cos θ)
     walls = [
-        ("γ=1.0", SurfaceEnergyWall(mask, gamma=1.0, dx=grid.dx)),
-        ("γ=0.5", SurfaceEnergyWall(mask, gamma=0.5, dx=grid.dx)),
-        ("γ=0.1", SurfaceEnergyWall(mask, gamma=0.1, dx=grid.dx)),
-        ("penalty λ=10", VolumePenaltyWall(mask, phi_wall=1.0, penalty=10.0)),
+        ("Surface γ=0.5", SurfaceEnergyWall(mask, gamma=0.5, dx=grid.dx)),
+        ("Surface γ=1.0", SurfaceEnergyWall(mask, gamma=1.0, dx=grid.dx)),
+        ("Penalty λ=2", VolumePenaltyWall(mask, phi_wall=1.0, penalty=2.0)),
+        ("Penalty λ=10", VolumePenaltyWall(mask, phi_wall=1.0, penalty=10.0)),
     ]
 
     n_steps = 20000
 
-    # Use the same initial condition for all runs
     phi0 = random_uniform(
         *grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42, device=device
     )
 
-    fig, axes = plt.subplots(2, len(walls), figsize=(4 * len(walls), 7))
+    n_cols = len(walls)
+    fig, axes = plt.subplots(2, n_cols, figsize=(4 * n_cols, 7))
+
+    wall_1d = mask[0, :].cpu().numpy()
+    y = torch.arange(grid.shape[1]).numpy()
 
     for col, (label, wall) in enumerate(walls):
         print(f"Running {label} ...")
@@ -55,8 +62,8 @@ def main() -> None:
         # 2D snapshot
         ax_img = axes[0, col]
         ax_img.imshow(
-            phi_final.numpy().T, origin="lower", cmap="RdBu_r", vmin=0, vmax=1,
-            aspect="auto",
+            phi_final.numpy().T, origin="lower", cmap="RdBu_r",
+            vmin=0, vmax=1, aspect="auto",
         )
         ax_img.set_title(label, fontsize=12)
         ax_img.set_xlabel("x")
@@ -64,26 +71,32 @@ def main() -> None:
             ax_img.set_ylabel("y")
 
         # Wall-normal profile (x-averaged)
-        profile = phi_final.mean(dim=0).numpy()  # average over x
-        y = torch.arange(grid.shape[1]).numpy()
-        wall_profile = mask[0, :].cpu().numpy()
+        profile = phi_final.mean(dim=0).numpy()
 
         ax_prof = axes[1, col]
-        ax_prof.plot(y, profile, "b-", label=r"$\langle\phi\rangle_x$")
-        ax_prof.fill_between(y, 0, wall_profile, alpha=0.2, color="gray", label="wall mask")
+        ax_prof.plot(y, profile, "b-", lw=1.5, label=r"$\langle\phi\rangle_x$")
+        ax_prof.fill_between(
+            y, 0, wall_1d, alpha=0.15, color="gray", label="wall",
+        )
+        ax_prof.axhline(0.5, color="k", ls=":", lw=0.5)
         ax_prof.set_xlabel("y")
-        ax_prof.set_ylim(-0.1, 1.1)
+        ax_prof.set_ylim(-0.05, 1.05)
         ax_prof.set_title(label, fontsize=12)
         if col == 0:
             ax_prof.set_ylabel(r"$\phi$")
-        ax_prof.legend(fontsize=8)
+        ax_prof.legend(fontsize=8, loc="center right")
+
+        fe = solver.compute_total_free_energy(phi_final.to(device))
+        print(f"  {label}  F = {fe:.2f}")
 
     fig.suptitle(
-        f"Wetting comparison (t={n_steps * grid.dt:.0f})",
-        fontsize=13,
+        f"Surface energy vs volume penalty  (t = {n_steps * grid.dt:.0f})",
+        fontsize=14,
     )
     plt.tight_layout()
-    plt.savefig("examples/results/wall_penalty_comparison.png", dpi=150, bbox_inches="tight")
+    plt.savefig(
+        "examples/results/wall_penalty_comparison.png", dpi=150, bbox_inches="tight",
+    )
     print("\nSaved examples/results/wall_penalty_comparison.png")
 
 

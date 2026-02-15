@@ -1,16 +1,17 @@
-"""Spinodal decomposition in a channel with wetting walls (2D).
+"""Effect of surface energy γ on wetting behaviour.
 
-Demonstrates the surface-energy method for wall wetting:
+Demonstrates how the surface energy coupling γ controls the
+wall–fluid interaction in a channel geometry:
 
-- A channel is created with smooth walls on the top and bottom
-  boundaries (along axis 1).
-- The wall preferentially wets one phase via surface energy coupling
-  γ > 0, producing wetting layers at both surfaces.
-- The bulk undergoes standard spinodal decomposition.
+  γ > 0  →  wall attracts the φ = 1 phase  (hydrophilic for A)
+  γ = 0  →  neutral wetting  (90° contact angle)
+  γ < 0  →  wall attracts the φ = 0 phase  (hydrophilic for B)
 
-The surface energy term F_s = −γ ∫ φ |∇Ω| dr adds a chemical potential
-contribution μ_surface = −γ |∇Ω|, where |∇Ω| acts as a surface delta
-function at the wall–fluid interface.
+For each γ value, the simulation runs spinodal decomposition inside
+a channel and plots:
+
+  - Top row: 2D snapshot of the final field
+  - Bottom row: wall-normal profile ⟨φ⟩_x averaged over x
 """
 
 import matplotlib.pyplot as plt
@@ -33,55 +34,75 @@ def main() -> None:
 
     # --- Physics ---
     functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5)
-    grid = GridParams(shape=(256, 64), dx=1.0, dt=0.1)
+    grid = GridParams(shape=(128, 64), dx=1.0, dt=0.1)
 
-    # --- Walls on top & bottom (axis=1) ---
+    # --- Channel walls (top & bottom) ---
     mask = channel_walls(*grid.shape, wall_thickness=5, axis=1, device=device)
-    # γ > 0 attracts the φ=1 (A-rich) phase to the wall
-    wall = SurfaceEnergyWall(mask, gamma=0.5, dx=grid.dx)
 
-    solver = SpectralSolver(
-        functional, grid, mobility=1.0, device=device, wall=wall,
+    # --- Sweep over γ: strong A-wetting → neutral → strong B-wetting ---
+    gammas = [1.0, 0.3, 0.0, -0.3, -1.0]
+
+    n_steps = 20000
+
+    # Same initial condition for all runs
+    phi0 = random_uniform(
+        *grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42, device=device
     )
 
-    # Initial condition: random in the fluid region
-    phi0 = random_uniform(*grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42, device=device)
+    n_cols = len(gammas)
+    fig, axes = plt.subplots(2, n_cols, figsize=(3.6 * n_cols, 7))
 
-    n_steps = 30000
-    save_interval = 6000
-    print(f"Running {n_steps} steps ...")
+    wall_1d = mask[0, :].cpu().numpy()
+    y = torch.arange(grid.shape[1]).numpy()
 
-    snapshots = solver.run(phi0, n_steps=n_steps, save_interval=save_interval)
+    for col, gamma in enumerate(gammas):
+        label = f"γ = {gamma:+.1f}"
+        print(f"Running {label} ...")
 
-    # --- Plot ---
-    n_cols = len(snapshots)
-    fig, axes = plt.subplots(1, n_cols, figsize=(3.5 * n_cols, 3))
-    if n_cols == 1:
-        axes = [axes]
-
-    for ax, (step, phi) in zip(axes, snapshots):
-        im = ax.imshow(
-            phi.numpy().T, origin="lower", cmap="RdBu_r", vmin=0, vmax=1,
-            aspect="auto",
+        wall = SurfaceEnergyWall(mask, gamma=gamma, dx=grid.dx)
+        solver = SpectralSolver(
+            functional, grid, mobility=1.0, device=device, wall=wall,
         )
-        ax.set_title(f"t = {step * grid.dt:.0f}", fontsize=11)
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
+        snapshots = solver.run(phi0.clone(), n_steps=n_steps, save_interval=n_steps)
+        phi_final = snapshots[-1][1]
 
-    fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.8)
+        # --- Top row: 2D snapshot ---
+        ax_img = axes[0, col]
+        ax_img.imshow(
+            phi_final.numpy().T, origin="lower", cmap="RdBu_r",
+            vmin=0, vmax=1, aspect="auto",
+        )
+        ax_img.set_title(label, fontsize=12)
+        ax_img.set_xlabel("x")
+        if col == 0:
+            ax_img.set_ylabel("y")
+
+        # --- Bottom row: wall-normal profile ---
+        profile = phi_final.mean(dim=0).numpy()
+
+        ax_prof = axes[1, col]
+        ax_prof.plot(y, profile, "b-", lw=1.5, label=r"$\langle\phi\rangle_x$")
+        ax_prof.fill_between(
+            y, 0, wall_1d, alpha=0.15, color="gray", label="wall",
+        )
+        ax_prof.axhline(0.5, color="k", ls=":", lw=0.5)
+        ax_prof.set_xlabel("y")
+        ax_prof.set_ylim(-0.05, 1.05)
+        ax_prof.set_title(label, fontsize=12)
+        if col == 0:
+            ax_prof.set_ylabel(r"$\phi$")
+        ax_prof.legend(fontsize=8, loc="center right")
+
+        fe = solver.compute_total_free_energy(phi_final.to(device))
+        print(f"  {label}  F = {fe:.2f}")
+
     fig.suptitle(
-        rf"Spinodal Decomposition in a Channel "
-        rf"(surface energy, $\gamma={wall.gamma}$)",
-        fontsize=13,
+        f"Surface energy wetting: effect of γ  (t = {n_steps * grid.dt:.0f})",
+        fontsize=14,
     )
+    plt.tight_layout()
     plt.savefig("examples/results/wetting.png", dpi=150, bbox_inches="tight")
     print("\nSaved examples/results/wetting.png")
-
-    # Free energy evolution
-    print("\nFree energy evolution:")
-    for step, phi in snapshots:
-        fe = solver.compute_total_free_energy(phi.to(device))
-        print(f"  step {step:6d}: F = {fe:.4f}")
 
 
 if __name__ == "__main__":
