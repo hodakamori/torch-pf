@@ -165,3 +165,57 @@ def random_nuclei(
         phi = phi + bump
 
     return phi.clamp(1e-8, 1.0 - 1e-8)
+
+
+def channel_walls(
+    *shape: int,
+    wall_thickness: float = 10.0,
+    axis: int = -1,
+    interface_width: float = 2.0,
+    dx: float = 1.0,
+    device: torch.device | str = "cpu",
+) -> Tensor:
+    """Create a smooth wall mask for a channel geometry.
+
+    Walls are placed at both boundaries along the specified axis.
+    The mask transitions smoothly from 1 (wall) to 0 (fluid) using a
+    tanh profile.
+
+    Parameters
+    ----------
+    *shape : int
+        Grid dimensions.
+    wall_thickness : float
+        Thickness of each wall in physical units.
+    axis : int
+        Axis perpendicular to the walls (default: last axis).
+    interface_width : float
+        Width of the smooth wall-fluid transition.
+    dx : float
+        Grid spacing.
+    device : torch.device or str
+        Computation device.
+
+    Returns
+    -------
+    Tensor
+        Wall mask (0 = fluid, 1 = wall).
+    """
+    ndim = len(shape)
+    axis = axis % ndim
+
+    N = shape[axis]
+    L = N * dx
+    y = torch.arange(N, device=device) * dx
+
+    # Wall near y=0  (lower boundary)
+    wall_lo = 0.5 * (1.0 + torch.tanh((wall_thickness - y) / interface_width))
+    # Wall near y=L  (upper boundary)
+    wall_hi = 0.5 * (1.0 + torch.tanh((y - (L - wall_thickness)) / interface_width))
+
+    wall_1d = (wall_lo + wall_hi).clamp(0.0, 1.0)
+
+    # Broadcast to full shape
+    view = [1] * ndim
+    view[axis] = N
+    return wall_1d.view(view).expand(shape).contiguous()

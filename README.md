@@ -43,6 +43,18 @@ FreeEnergyFunctional                  mobility
 | `alpha = 0` (default) | **Cahn-Hilliard** — local + gradient only | Spinodal decomposition, nucleation and growth |
 | `alpha > 0` | **Ohta-Kawasaki** — adds long-range repulsion | Block-copolymer microphase separation (lamellae, cylinders, spheres) |
 
+Solid walls can be added via the **volume-penalty method**:
+
+```python
+wall = channel_walls(256, 64, wall_thickness=5, axis=1)
+solver = SpectralSolver(functional, grid, mobility=1.0,
+                        wall=wall, wall_phi=1.0, wall_penalty=10.0)
+```
+
+The penalty term $\lambda\,\Omega(\mathbf{r})(\phi - \phi_{\mathrm{wall}})$ is
+added to the chemical potential, preserving mass conservation and allowing
+control of the wetting angle via `wall_phi`.
+
 ## Equations
 
 ### Free energy functional
@@ -113,6 +125,7 @@ solver = SpectralSolver(functional, grid, mobility=1.0)
 | `examples/nucleation.py` | CH (α=0) | Nucleation: super- vs sub-critical nucleus in metastable state |
 | `examples/block_copolymer_2d.py` | OK (α>0) | 2D Ohta-Kawasaki: lamellae and cylinder morphologies |
 | `examples/block_copolymer_3d.py` | OK (α>0) | 3D Ohta-Kawasaki: gyroid / lamellar structures |
+| `examples/wetting.py` | CH + wall | Spinodal decomposition in a channel with wetting walls |
 
 ## Project structure
 

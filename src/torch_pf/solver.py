@@ -15,17 +15,28 @@ Ohta-Kawasaki (α > 0)
 ---------------------
     δF/δφ = f'(φ) − κ ∇²φ + α (−∇²)⁻¹(φ − φ̄)
 
+Wall confinement (volume penalty)
+---------------------------------
+When a wall mask Ω(r) is provided, a penalty term is added to the
+chemical potential:
+
+    μ_eff = μ + λ Ω(r) (φ − φ_wall)
+
+This preserves mass conservation (∂φ/∂t = ∇²μ_eff) and allows
+control of the wetting angle via φ_wall.
+
 A stabilised semi-implicit spectral scheme is used:
 
     φ̂^{n+1} = (φ̂^n − Δt M k² ĝ^n) / D_k
-    g^n      = f'(φ^n) − C φ^n
+    g^n      = f'(φ^n) + λ Ω (φ^n − φ_wall) − C φ^n
 
 where the denominator D_k accounts for both gradient and long-range terms:
 
     D_k = 1 + Δt M k² (C + κ k²)        [α = 0]
     D_k = 1 + Δt M (k² (C + κ k²) + α)  [α > 0, k ≠ 0]
 
-The stabilisation constant C is automatically chosen from max |f''|.
+The stabilisation constant C is automatically chosen from max |f''|
+(plus the wall penalty λ when a wall is present).
 """
 
 from __future__ import annotations
@@ -81,6 +92,16 @@ class SpectralSolver:
         Computation device ('cpu' or 'cuda').
     stabilization : float | None
         Stabilisation constant C.  If None, estimated from max |f''|.
+    wall : Tensor | None
+        Smooth wall mask Ω(r): 0 = fluid, 1 = wall.
+        When provided, a volume-penalty term is added to the chemical
+        potential to confine φ inside the wall.
+    wall_phi : float
+        Preferred composition at the wall surface (controls wetting).
+        0.5 = neutral; 0 or 1 = preferential wetting by one phase.
+    wall_penalty : float
+        Penalty strength λ.  Larger values enforce the wall more
+        strictly but require a smaller time step for stability.
     """
 
     def __init__(
@@ -90,11 +111,19 @@ class SpectralSolver:
         mobility: float = 1.0,
         device: torch.device | str = "cpu",
         stabilization: float | None = None,
+        wall: Tensor | None = None,
+        wall_phi: float = 0.5,
+        wall_penalty: float = 10.0,
     ) -> None:
         self.functional = functional
         self.grid = grid
         self.mobility = mobility
         self.device = torch.device(device)
+
+        # Wall confinement
+        self._wall: Tensor | None = wall.to(self.device) if wall is not None else None
+        self._wall_phi = wall_phi
+        self._wall_penalty = wall_penalty
 
         # Stabilisation constant
         if stabilization is not None:
@@ -125,7 +154,11 @@ class SpectralSolver:
         """Estimate stabilisation constant from max |f''| in [0.01, 0.99]."""
         phi_test = torch.linspace(0.01, 0.99, 2000)
         d2f = self.functional.local.second_derivative(phi_test)
-        return max(float(d2f.abs().max()) * 1.1, 1.0)
+        C = max(float(d2f.abs().max()) * 1.1, 1.0)
+        # Account for wall penalty in stabilisation
+        if self._wall is not None:
+            C += self._wall_penalty
+        return C
 
     def _build_k_grids(self) -> list[Tensor]:
         """Build wavenumber component grids for each spatial dimension."""
@@ -156,6 +189,9 @@ class SpectralSolver:
         """
         g = self.grid
         mu = self.functional.local.chemical_potential(phi)
+        # Wall penalty: λ Ω(r) (φ − φ_wall)
+        if self._wall is not None:
+            mu = mu + self._wall_penalty * self._wall * (phi - self._wall_phi)
         g_explicit = mu - self._C * phi
         g_hat = torch.fft.fftn(g_explicit)
         phi_hat = torch.fft.fftn(phi)
@@ -198,7 +234,8 @@ class SpectralSolver:
     def compute_total_free_energy(self, phi: Tensor) -> float:
         """Compute the total free energy F[φ].
 
-        Includes bulk, gradient, and (if α > 0) long-range contributions.
+        Includes bulk, gradient, long-range (if α > 0), and wall penalty
+        contributions.
 
         Parameters
         ----------
@@ -238,5 +275,14 @@ class SpectralSolver:
 
             lr_sum = (psi_hat.abs() ** 2 * k2_inv).sum()
             result += 0.5 * f.alpha * lr_sum.item() * dV / phi.numel()
+
+        # Wall penalty: (λ/2) ∫ Ω(r) (φ − φ_wall)² dr
+        if self._wall is not None:
+            wall_energy = (
+                0.5 * self._wall_penalty
+                * (self._wall * (phi - self._wall_phi) ** 2).sum().item()
+                * dV
+            )
+            result += wall_energy
 
         return result
