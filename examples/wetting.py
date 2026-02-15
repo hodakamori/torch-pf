@@ -1,18 +1,16 @@
 """Spinodal decomposition in a channel with wetting walls (2D).
 
-Demonstrates the volume-penalty method for solid walls:
+Demonstrates the surface-energy method for wall wetting:
 
 - A channel is created with smooth walls on the top and bottom
   boundaries (along axis 1).
-- The wall preferentially wets one phase (φ_wall = 1.0), producing
-  wetting layers at both surfaces.
+- The wall preferentially wets one phase via surface energy coupling
+  γ > 0, producing wetting layers at both surfaces.
 - The bulk undergoes standard spinodal decomposition.
 
-The wall is realised by adding a penalty term to the chemical potential:
-
-    μ_eff = μ + λ Ω(r) (φ − φ_wall)
-
-where Ω(r) is the smooth wall mask and λ is the penalty strength.
+The surface energy term F_s = −γ ∫ φ |∇Ω| dr adds a chemical potential
+contribution μ_surface = −γ |∇Ω|, where |∇Ω| acts as a surface delta
+function at the wall–fluid interface.
 """
 
 import matplotlib.pyplot as plt
@@ -23,6 +21,7 @@ from torch_pf import (
     FreeEnergyFunctional,
     GridParams,
     SpectralSolver,
+    SurfaceEnergyWall,
     channel_walls,
     random_uniform,
 )
@@ -37,12 +36,12 @@ def main() -> None:
     grid = GridParams(shape=(256, 64), dx=1.0, dt=0.1)
 
     # --- Walls on top & bottom (axis=1) ---
-    wall = channel_walls(*grid.shape, wall_thickness=5, axis=1, device=device)
-    wall_phi = 1.0  # A-rich phase wets the wall
+    mask = channel_walls(*grid.shape, wall_thickness=5, axis=1, device=device)
+    # γ > 0 attracts the φ=1 (A-rich) phase to the wall
+    wall = SurfaceEnergyWall(mask, gamma=0.5, dx=grid.dx)
 
     solver = SpectralSolver(
-        functional, grid, mobility=1.0, device=device,
-        wall=wall, wall_phi=wall_phi, wall_penalty=10.0,
+        functional, grid, mobility=1.0, device=device, wall=wall,
     )
 
     # Initial condition: random in the fluid region
@@ -72,7 +71,7 @@ def main() -> None:
     fig.colorbar(im, ax=axes, label=r"$\phi$", shrink=0.8)
     fig.suptitle(
         rf"Spinodal Decomposition in a Channel "
-        rf"($\phi_{{wall}}={wall_phi}$, $\lambda={solver._wall_penalty}$)",
+        rf"(surface energy, $\gamma={wall.gamma}$)",
         fontsize=13,
     )
     plt.savefig("examples/results/wetting.png", dpi=150, bbox_inches="tight")

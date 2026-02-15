@@ -9,6 +9,9 @@ from torch_pf import (
     FreeEnergyFunctional,
     GridParams,
     SpectralSolver,
+    SurfaceEnergyWall,
+    VolumePenaltyWall,
+    channel_walls,
     random_uniform,
     droplet,
 )
@@ -288,3 +291,176 @@ class TestSpectralSolverOK3D:
             phi = self.solver.step(phi)
         fe_final = self.solver.compute_total_free_energy(phi)
         assert fe_final < fe_initial
+
+
+# ======================================================================
+# Wall condition tests
+# ======================================================================
+
+
+class TestVolumePenaltyWall:
+    def setup_method(self):
+        self.grid = GridParams(shape=(32, 32), dx=1.0, dt=0.1)
+        self.functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5)
+        self.mask = channel_walls(*self.grid.shape, wall_thickness=3, axis=1)
+
+    def test_chemical_potential_zero_at_wall_phi(self):
+        wall = VolumePenaltyWall(self.mask, phi_wall=0.5, penalty=10.0)
+        phi = torch.full(self.grid.shape, 0.5)
+        mu = wall.chemical_potential_contribution(phi)
+        assert mu.abs().max().item() < 1e-6
+
+    def test_chemical_potential_nonzero_away_from_wall_phi(self):
+        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
+        phi = torch.full(self.grid.shape, 0.5)
+        mu = wall.chemical_potential_contribution(phi)
+        # Should be non-zero where mask > 0
+        assert mu.abs().max().item() > 0
+
+    def test_energy_zero_at_wall_phi(self):
+        wall = VolumePenaltyWall(self.mask, phi_wall=0.5, penalty=10.0)
+        phi = torch.full(self.grid.shape, 0.5)
+        e = wall.energy_contribution(phi, dV=1.0)
+        assert abs(e) < 1e-6
+
+    def test_energy_positive_away_from_wall_phi(self):
+        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
+        phi = torch.full(self.grid.shape, 0.5)
+        e = wall.energy_contribution(phi, dV=1.0)
+        assert e > 0
+
+    def test_stabilization_estimate(self):
+        wall = VolumePenaltyWall(self.mask, penalty=10.0)
+        assert wall.stabilization_estimate() == 10.0
+
+    def test_to_device(self):
+        wall = VolumePenaltyWall(self.mask, penalty=10.0)
+        wall_cpu = wall.to("cpu")
+        assert wall_cpu.mask.device.type == "cpu"
+
+    def test_mass_conservation_with_solver(self):
+        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
+        solver = SpectralSolver(
+            self.functional, self.grid, mobility=1.0, wall=wall,
+        )
+        phi = random_uniform(*self.grid.shape, phi_mean=0.5, seed=42)
+        total_0 = phi.sum().item()
+        for _ in range(100):
+            phi = solver.step(phi)
+        assert abs(phi.sum().item() - total_0) < 1e-3
+
+    def test_free_energy_decreases_with_solver(self):
+        wall = VolumePenaltyWall(self.mask, phi_wall=1.0, penalty=10.0)
+        solver = SpectralSolver(
+            self.functional, self.grid, mobility=1.0, wall=wall,
+        )
+        phi = random_uniform(*self.grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42)
+        fe_initial = solver.compute_total_free_energy(phi)
+        for _ in range(500):
+            phi = solver.step(phi)
+        fe_final = solver.compute_total_free_energy(phi)
+        assert fe_final < fe_initial
+
+
+class TestSurfaceEnergyWall:
+    def setup_method(self):
+        self.grid = GridParams(shape=(32, 32), dx=1.0, dt=0.1)
+        self.functional = FreeEnergyFunctional(local=DoubleWell(W=1.0), kappa=0.5)
+        self.mask = channel_walls(*self.grid.shape, wall_thickness=3, axis=1)
+
+    def test_surface_delta_concentrated_at_interface(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0)
+        delta = wall._surface_delta
+        # |∇Ω| should be near zero far from the wall surface
+        # The interior of the fluid region (middle of domain) should have ~0
+        mid = self.grid.shape[1] // 2
+        assert delta[:, mid].max().item() < 0.01
+
+    def test_surface_delta_nonzero_at_wall_surface(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0)
+        delta = wall._surface_delta
+        # |∇Ω| should be large at the wall-fluid interface
+        assert delta.max().item() > 0.1
+
+    def test_chemical_potential_shape(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0)
+        phi = random_uniform(*self.grid.shape, seed=42)
+        mu = wall.chemical_potential_contribution(phi)
+        assert mu.shape == self.grid.shape
+
+    def test_chemical_potential_independent_of_phi(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0)
+        phi_a = torch.full(self.grid.shape, 0.3)
+        phi_b = torch.full(self.grid.shape, 0.8)
+        mu_a = wall.chemical_potential_contribution(phi_a)
+        mu_b = wall.chemical_potential_contribution(phi_b)
+        # Linear surface energy: μ = −γ|∇Ω| does not depend on φ
+        assert torch.allclose(mu_a, mu_b)
+
+    def test_positive_gamma_attracts_phi1(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0)
+        phi = random_uniform(*self.grid.shape, seed=42)
+        mu = wall.chemical_potential_contribution(phi)
+        # γ > 0 → μ_surface < 0 near wall → lowers chemical potential → attracts φ=1
+        assert mu.min().item() < 0
+
+    def test_negative_gamma_attracts_phi0(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=-1.0)
+        phi = random_uniform(*self.grid.shape, seed=42)
+        mu = wall.chemical_potential_contribution(phi)
+        # γ < 0 → μ_surface > 0 near wall → raises chemical potential → attracts φ=0
+        assert mu.max().item() > 0
+
+    def test_zero_gamma_is_neutral(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=0.0)
+        phi = random_uniform(*self.grid.shape, seed=42)
+        mu = wall.chemical_potential_contribution(phi)
+        assert mu.abs().max().item() < 1e-10
+
+    def test_stabilization_estimate_is_zero(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0)
+        assert wall.stabilization_estimate() == 0.0
+
+    def test_to_device(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0)
+        wall_cpu = wall.to("cpu")
+        assert wall_cpu.mask.device.type == "cpu"
+        assert wall_cpu._surface_delta.device.type == "cpu"
+
+    def test_mass_conservation_with_solver(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=0.5, dx=self.grid.dx)
+        solver = SpectralSolver(
+            self.functional, self.grid, mobility=1.0, wall=wall,
+        )
+        phi = random_uniform(*self.grid.shape, phi_mean=0.5, seed=42)
+        total_0 = phi.sum().item()
+        for _ in range(100):
+            phi = solver.step(phi)
+        assert abs(phi.sum().item() - total_0) < 1e-3
+
+    def test_free_energy_decreases_with_solver(self):
+        wall = SurfaceEnergyWall(self.mask, gamma=0.5, dx=self.grid.dx)
+        solver = SpectralSolver(
+            self.functional, self.grid, mobility=1.0, wall=wall,
+        )
+        phi = random_uniform(*self.grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42)
+        fe_initial = solver.compute_total_free_energy(phi)
+        for _ in range(500):
+            phi = solver.step(phi)
+        fe_final = solver.compute_total_free_energy(phi)
+        assert fe_final < fe_initial
+
+    def test_surface_energy_wetting_effect(self):
+        """Surface energy should drive wetting near the wall."""
+        wall = SurfaceEnergyWall(self.mask, gamma=1.0, dx=self.grid.dx)
+        solver = SpectralSolver(
+            self.functional, self.grid, mobility=1.0, wall=wall,
+        )
+        phi = random_uniform(*self.grid.shape, phi_mean=0.5, noise_amplitude=0.05, seed=42)
+        for _ in range(500):
+            phi = solver.step(phi)
+        # Near the wall (y=0 and y=N-1) the average φ should be higher
+        # than in the bulk (γ > 0 attracts φ=1)
+        near_wall = phi[:, :3].mean().item()
+        bulk = phi[:, 13:19].mean().item()
+        assert near_wall > bulk

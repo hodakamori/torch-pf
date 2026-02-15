@@ -30,7 +30,11 @@ FreeEnergy (ABC)                    GridParams
 FreeEnergyFunctional                  mobility
   local: FreeEnergy   ──────────►     functional
   kappa: float                        device
-  alpha: float
+  alpha: float                        wall: WallCondition
+
+                                    WallCondition (ABC)
+                                    ├─ SurfaceEnergyWall
+                                    └─ VolumePenaltyWall
 ```
 
 - **`FreeEnergyFunctional`** bundles `f(φ)`, κ, and α into a single thermodynamic object.
@@ -43,17 +47,26 @@ FreeEnergyFunctional                  mobility
 | `alpha = 0` (default) | **Cahn-Hilliard** — local + gradient only | Spinodal decomposition, nucleation and growth |
 | `alpha > 0` | **Ohta-Kawasaki** — adds long-range repulsion | Block-copolymer microphase separation (lamellae, cylinders, spheres) |
 
-Solid walls can be added via the **volume-penalty method**:
+Solid walls can be added via pluggable **wall conditions**:
 
 ```python
-wall = channel_walls(256, 64, wall_thickness=5, axis=1)
-solver = SpectralSolver(functional, grid, mobility=1.0,
-                        wall=wall, wall_phi=1.0, wall_penalty=10.0)
+from torch_pf import SurfaceEnergyWall, VolumePenaltyWall, channel_walls
+
+mask = channel_walls(256, 64, wall_thickness=5, axis=1)
+
+# Surface energy method (recommended) — γ = σ cos(θ) directly controls contact angle
+wall = SurfaceEnergyWall(mask, gamma=0.5, dx=1.0)
+
+# Volume-penalty method (legacy) — penalty drives φ → φ_wall inside the wall
+wall = VolumePenaltyWall(mask, phi_wall=1.0, penalty=10.0)
+
+solver = SpectralSolver(functional, grid, mobility=1.0, wall=wall)
 ```
 
-The penalty term $\lambda\,\Omega(\mathbf{r})(\phi - \phi_{\mathrm{wall}})$ is
-added to the chemical potential, preserving mass conservation and allowing
-control of the wetting angle via `wall_phi`.
+| Wall method | Chemical potential contribution | Contact angle control |
+|---|---|---|
+| `SurfaceEnergyWall(mask, γ)` | $-\gamma\,\lvert\nabla\Omega\rvert$ | Direct: $\gamma = \sigma\cos\theta$ |
+| `VolumePenaltyWall(mask, φ_w, λ)` | $\lambda\,\Omega(\phi - \phi_w)$ | Indirect via $\phi_w$ and $\lambda$ |
 
 ## Equations
 
@@ -133,6 +146,7 @@ solver = SpectralSolver(functional, grid, mobility=1.0)
 src/torch_pf/
   free_energy.py      Free energy models + FreeEnergyFunctional
   solver.py           SpectralSolver + GridParams
+  wall.py             Wall conditions (SurfaceEnergyWall, VolumePenaltyWall)
   initializers.py     Initial condition generators
 examples/             Example scripts
 tests/                Tests
