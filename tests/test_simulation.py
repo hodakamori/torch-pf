@@ -5,7 +5,9 @@ import pytest
 
 from torch_pf import (
     CahnHilliardSolver,
+    DoubleWell,
     FloryHuggins,
+    OhtaKawasakiSolver,
     SimulationParams,
     random_uniform,
     droplet,
@@ -205,3 +207,78 @@ class TestCahnHilliardSolver3D:
 
     def test_ndim(self):
         assert self.params.ndim == 3
+
+
+class TestOhtaKawasakiSolver2D:
+    def setup_method(self):
+        self.params = SimulationParams(shape=(32, 32), dx=1.0, dt=0.1, mobility=1.0, kappa=0.5)
+        self.dw = DoubleWell(W=1.0)
+        self.alpha = 0.05
+        self.solver = OhtaKawasakiSolver(self.params, self.dw, alpha=self.alpha)
+
+    def test_step_preserves_shape(self):
+        phi = random_uniform(32, 32, seed=42)
+        phi_new = self.solver.step(phi)
+        assert phi_new.shape == (32, 32)
+
+    def test_mass_conservation(self):
+        phi = random_uniform(32, 32, phi_mean=0.5, seed=42)
+        total_before = phi.sum().item()
+        phi_new = self.solver.step(phi)
+        assert abs(phi_new.sum().item() - total_before) < 1e-3
+
+    def test_mass_conservation_over_many_steps(self):
+        phi = random_uniform(32, 32, phi_mean=0.5, seed=42)
+        total_0 = phi.sum().item()
+        for _ in range(100):
+            phi = self.solver.step(phi)
+        assert abs(phi.sum().item() - total_0) < 1e-3
+
+    def test_free_energy_decreases(self):
+        phi = random_uniform(32, 32, phi_mean=0.5, noise_amplitude=0.05, seed=42)
+        fe_initial = self.solver.compute_total_free_energy(phi)
+        for _ in range(500):
+            phi = self.solver.step(phi)
+        fe_final = self.solver.compute_total_free_energy(phi)
+        assert fe_final < fe_initial
+
+    def test_long_range_energy_nonnegative(self):
+        phi = random_uniform(32, 32, phi_mean=0.5, noise_amplitude=0.05, seed=42)
+        fe_ok = self.solver.compute_total_free_energy(phi)
+        ch_solver = CahnHilliardSolver(self.params, self.dw)
+        fe_ch = ch_solver.compute_total_free_energy(phi)
+        assert fe_ok >= fe_ch - 1e-6
+
+    def test_run_returns_snapshots(self):
+        phi0 = random_uniform(32, 32, seed=42)
+        snapshots = self.solver.run(phi0, n_steps=100, save_interval=50)
+        assert len(snapshots) == 3
+        assert snapshots[0][0] == 0
+        assert snapshots[1][0] == 50
+        assert snapshots[2][0] == 100
+
+
+class TestOhtaKawasakiSolver3D:
+    def setup_method(self):
+        self.params = SimulationParams(shape=(16, 16, 16), dx=1.0, dt=0.1, mobility=1.0, kappa=0.5)
+        self.dw = DoubleWell(W=1.0)
+        self.solver = OhtaKawasakiSolver(self.params, self.dw, alpha=0.05)
+
+    def test_step_preserves_shape(self):
+        phi = random_uniform(16, 16, 16, seed=42)
+        phi_new = self.solver.step(phi)
+        assert phi_new.shape == (16, 16, 16)
+
+    def test_mass_conservation(self):
+        phi = random_uniform(16, 16, 16, phi_mean=0.5, seed=42)
+        total_before = phi.sum().item()
+        phi_new = self.solver.step(phi)
+        assert abs(phi_new.sum().item() - total_before) < 1e-3
+
+    def test_free_energy_decreases(self):
+        phi = random_uniform(16, 16, 16, phi_mean=0.5, noise_amplitude=0.05, seed=42)
+        fe_initial = self.solver.compute_total_free_energy(phi)
+        for _ in range(200):
+            phi = self.solver.step(phi)
+        fe_final = self.solver.compute_total_free_energy(phi)
+        assert fe_final < fe_initial

@@ -3,11 +3,13 @@
 from .cahn_hilliard import CahnHilliardSolver, SimulationParams
 from .free_energy import DoubleWell, FloryHuggins
 from .initializers import droplet, random_uniform
+from .ohta_kawasaki import OhtaKawasakiSolver
 
 __all__ = [
     "CahnHilliardSolver",
     "DoubleWell",
     "FloryHuggins",
+    "OhtaKawasakiSolver",
     "SimulationParams",
     "droplet",
     "random_uniform",
