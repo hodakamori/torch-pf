@@ -70,7 +70,7 @@ The parameter $\gamma = \sigma\cos\theta$ directly controls the contact angle:
 
 ### Free energy functional
 
-$$F[\phi] = \int \!\Big[ f(\phi) + \frac{\kappa}{2}|\nabla\phi|^2 \Big] d\mathbf{r} \;+\; \frac{\alpha}{2}\int\!\!\int G(\mathbf{r}-\mathbf{r}')(\phi-\bar\phi)(\phi'-\bar\phi)\, d\mathbf{r}\, d\mathbf{r}'$$
+$$F[\phi] = \int \left[ f(\phi) + \frac{\kappa}{2}|\nabla\phi|^2 \right] d\mathbf{r} + \frac{\alpha}{2} \iint G(\mathbf{r}-\mathbf{r}^{\prime})\,(\phi-\bar{\phi})\,(\phi^{\prime}-\bar{\phi})\, d\mathbf{r}\, d\mathbf{r}^{\prime}$$
 
 The first integral contains the local free energy density `f(φ)` and
 the gradient energy (controlled by κ). The second integral is the
@@ -83,10 +83,10 @@ $$\frac{\partial \phi}{\partial t} = M \nabla^2 \frac{\delta F}{\delta \phi}$$
 
 Solved with a stabilised semi-implicit spectral scheme:
 
-$$\hat{\phi}^{n+1} = \frac{\hat{\phi}^n - \Delta t\, M\, k^2\, \hat{g}^n}{D_k}, \qquad g^n = f'(\phi^n) - C\,\phi^n$$
+$$\hat{\phi}^{n+1} = \frac{\hat{\phi}^{n} - \Delta t \, M \, k^2 \, \hat{g}^{n}}{D_k}, \qquad g^{n} = f^{\prime}(\phi^{n}) - C \, \phi^{n}$$
 
-where $D_k = 1 + \Delta t\, M\, k^2(C + \kappa k^2) + \Delta t\, M\, \alpha\, \mathbb{1}_{k\neq 0}$.
-The stabilisation constant $C$ is automatically determined from $\max|f''|$.
+where $D_k = 1 + \Delta t \, M \, k^2(C + \kappa k^2) + \Delta t \, M \, \alpha \, \mathbf{1}_{k \neq 0}$.
+The stabilisation constant $C$ is automatically determined from $\max |f^{\prime\prime}|$.
 
 ### Flory-Huggins free energy
 
